@@ -1,3 +1,2 @@
-refactor approach for orphan properties
 allow Person(key=Key(...))
 improve str/repr for Model and Property (make as short as possible)

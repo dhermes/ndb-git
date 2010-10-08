@@ -648,7 +648,7 @@ class ModelTests(unittest.TestCase):
   def testCannotMultipleInMultiple(self):
     class Inner(model.Model):
       innerval = model.StringProperty(repeated=True)
-    self.assertRaises(AssertionError, 
+    self.assertRaises(AssertionError,
                       model.StructuredProperty, Inner, repeated=True)
 
   def testNullProperties(self):
@@ -680,27 +680,34 @@ class ModelTests(unittest.TestCase):
     self.assertEqual(q, p)
 
   def testOrphanProperties(self):
+    class Tag(model.Model):
+      names = model.StringProperty(repeated=True)
+      ratings = model.IntegerProperty(repeated=True)
+    model.FixUpProperties(Tag)
     class Address(model.Model):
-      street = model.StringProperty()
+      line = model.StringProperty(repeated=True)
       city = model.StringProperty()
       zip = model.IntegerProperty()
+      tags = model.StructuredProperty(Tag)
     model.FixUpProperties(Address)
     class Person(model.Model):
       address = model.StructuredProperty(Address)
-      age = model.IntegerProperty()
+      age = model.IntegerProperty(repeated=True)
       name = model.StringProperty()
       k = model.KeyProperty()
     model.FixUpProperties(Person)
     k = model.Key(flat=['Person', 42])
-    p = Person(name='White House', k=k, age=210,
-               address=Address(street='1600 Pennsylvania', zip=20500))
+    p = Person(name='White House', k=k, age=[210, 211],
+               address=Address(line=['1600 Pennsylvania', 'Washington, DC'],
+                               tags=Tag(names=['a', 'b'], ratings=[1, 2]),
+                               zip=20500))
     p.key = k
     pb = p.ToPb()
     q = model.Model()
     q.FromPb(pb)
     pb = q.ToPb()
     self.assertEqual(pb, p.ToPb(),
-                     str(q.ToPb()) + '\n**********\n' + str(p.ToPb()))
+                     "Actual:\n%s\nExpected:\n%s" % (q.ToPb(), p.ToPb()))
 
 def main():
   unittest.main()

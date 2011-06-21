@@ -1349,8 +1349,6 @@ class LocalStructuredProperty(Property):
   def __init__(self, modelclass, name=None, compressed=False, **kwds):
     super(LocalStructuredProperty, self).__init__(name=name, **kwds)
     assert not self._indexed
-    if self._repeated:
-      assert not modelclass._has_repeated
     self._modelclass = modelclass
     self._compressed = compressed
 

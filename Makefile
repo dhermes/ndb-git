@@ -42,6 +42,9 @@ tasklets_test:
 context_test:
 	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.context_test $(FLAGS)
 
+thread_test:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.thread_test $(FLAGS)
+
 c cov cove cover coverage:
 	coverage erase
 	for i in $(TESTS); \
@@ -61,7 +64,7 @@ debug:
 	$(GAE)/dev_appserver.py . --port $(PORT) --address $(ADDRESS) --debug
 
 deploy:
-	appcfg.py update .
+	/tmp/appcfg_over_stubby.par update .
 
 bench:
 	PYTHONPATH=$(GAEPATH):. $(PYTHON) bench.py $(FLAGS)

@@ -42,6 +42,9 @@ tasklets_test:
 context_test:
 	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.context_test $(FLAGS)
 
+thread_test:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.thread_test $(FLAGS)
+
 c cov cove cover coverage:
 	coverage erase
 	for i in $(TESTS); \
@@ -55,23 +58,26 @@ c cov cove cover coverage:
 	echo "open file://`pwd`/htmlcov/index.html"
 
 serve:
-	$(GAE)/dev_appserver.py . --port $(PORT) --address $(ADDRESS)
+	$(GAE)/dev_appserver.py . --port $(PORT) --address $(ADDRESS) $(FLAGS)
 
 debug:
-	$(GAE)/dev_appserver.py . --port $(PORT) --address $(ADDRESS) --debug
+	$(GAE)/dev_appserver.py . --port $(PORT) --address $(ADDRESS) --debug $(FLAGS)
 
 deploy:
-	appcfg.py update .
+	$(GAE)/appcfg.py update . $(FLAGS)
+
+bench:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) bench.py $(FLAGS)
 
 python:
 	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i startup.py $(FLAGS)
 
 python_raw:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) $(FLAGS)
 
 zip:
 	D=`pwd`; D=`basename $$D`; cd ..; rm -f $$D.zip; zip $$D.zip `hg st -c -m -a -n -X $$D/.idea $$D`
 
 clean:
 	rm -rf htmlcov .coverage
-	rm -f `find . -name \*.pyc -o -name \*~ -o -name @\* -o -name \*.orig -o -name \*.rej`
+	rm -f `find . -name \*.pyc -o -name \*~ -o -name @\* -o -name \*.orig -o -name \*.rej -o -name \#*\#`

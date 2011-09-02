@@ -524,9 +524,9 @@ class Property(object):
     StructuredProperty with a model that has a Property named IN.
     """
     from .query import FilterNode  # Import late to avoid circular imports.
-    if not isinstance(value, (list, tuple)):
-      raise datastore_errors.BadArgumentError('Expected list or tuple, got %r' %
-                                              (value,))
+    if not isinstance(value, (list, tuple, set, frozenset)):
+      raise datastore_errors.BadArgumentError(
+        'Expected list, tuple or set, got %r' % (value,))
     values = []
     for val in value:
       if val is not None:

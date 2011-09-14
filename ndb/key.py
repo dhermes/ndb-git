@@ -412,8 +412,12 @@ class Key(object):
     returned.  In all cases the Future's result is None (i.e. there is
     no way to tell whether the entity existed or not).
     """
-    from . import tasklets
-    return tasklets.get_context().delete(self, **ctx_options)
+    from . import tasklets, model
+    ctx = tasklets.get_context()
+    cls = model.Model._get_kind_map().get(self.kind())
+    if cls is not None:
+      cls._maybe_delete_fetch_all_memcache(ctx)
+    return ctx.delete(self, **ctx_options)
 
 
 # The remaining functions in this module are private.

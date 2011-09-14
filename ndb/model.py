@@ -638,7 +638,7 @@ class Property(object):
         value = self._do_validate(value)
     self._store_value(entity, value)
 
-  def _has_value(self, entity):
+  def _has_value(self, entity, rest=None):
     """Internal helper to ask if the entity has a value for this Property."""
     return self._name in entity._values
 
@@ -1405,6 +1405,26 @@ class StructuredProperty(Property):
                                            (self._modelclass.__name__, value))
     return value
 
+  def _has_value(self, entity, rest=None):
+    # rest: optional list of attribute names to check in addition.
+    # Basically, prop._has_value(self, ent, ['x', 'y']) is similar to
+    #   (prop._has_value(ent) and
+    #    prop.x._has_value(ent.x) and
+    #    prop.x.y._has_value(ent.x.y))
+    # assuming prop.x and prop.x.y exist.
+    # NOTE: This is not particularly efficient if len(rest) > 1,
+    # but that seems a rare case, so for now I don't care.
+    ok = super(StructuredProperty, self)._has_value(entity)
+    if ok and rest:
+      subent = self._get_value(entity)
+      assert subent is not None
+      subprop = subent._properties.get(rest[0])
+      if subprop is None:
+        ok = False
+      else:
+        ok = subprop._has_value(subent, rest[1:])
+    return ok
+
   def _serialize(self, entity, pb, prefix='', parent_repeated=False):
     # entity -> pb; pb is an EntityProto message
     value = self._retrieve_value(entity)
@@ -1442,6 +1462,7 @@ class StructuredProperty(Property):
     parts = name.split('.')
     assert len(parts) > depth, (depth, name, parts)
     next = parts[depth]
+    rest = parts[depth+1:]
     prop = self._modelclass._properties.get(next)
     assert prop is not None  # QED
 
@@ -1455,7 +1476,7 @@ class StructuredProperty(Property):
     # property yet.
     for sub in values:
       assert isinstance(sub, self._modelclass)
-      if not prop._has_value(sub):
+      if not prop._has_value(sub, rest):
         subentity = sub
         break
     else:
@@ -1647,7 +1668,7 @@ class ComputedProperty(GenericProperty):
     assert self._default is None, 'ComputedProperty cannot have a default'
     self._func = func
 
-  def _has_value(self, entity):
+  def _has_value(self, entity, rest=None):
     return True
 
   def _store_value(self, entity, value):
@@ -2041,7 +2062,9 @@ class Model(object):
     This is the asynchronous version of Model._put().
     """
     from . import tasklets
-    return tasklets.get_context().put(self, **ctx_options)
+    ctx = tasklets.get_context()
+    self.__class__._maybe_delete_fetch_all_memcache(ctx)
+    return ctx.put(self, **ctx_options)
   put_async = _put_async
 
   @classmethod
@@ -2136,6 +2159,49 @@ class Model(object):
     key = Key(cls._get_kind(), id, parent=parent)
     return tasklets.get_context().get(key, **ctx_options)
   get_by_id_async = _get_by_id_async
+
+  # Class variable to select limited query caching.
+  # Set this to an integer query limit and .fetch_all() will cache
+  # that many entities.
+  _fetch_all_limit = None
+
+  @classmethod
+  def _get_fetch_all_memcache_key(cls, ctx):
+    return ctx._memcache_prefix + 'QUERY:' + cls._get_kind()
+
+  @classmethod
+  def _maybe_delete_fetch_all_memcache(cls, ctx):
+    if cls._fetch_all_limit:
+      # NOTE: memcache_delete() returns a Future we ignore.
+      from ndb import context  # TODO: Move _LOCK_TIME into Context class.
+      ctx.memcache_delete(cls._get_fetch_all_memcache_key(ctx),
+                          seconds=context._LOCK_TIME)
+
+  # TODO: Make an async version of this.  (Problem: can't import tasklets
+  # at the top level.)
+  # TODO: Add a keys_only=<bool> flag.
+  @classmethod
+  def _fetch_all(cls):
+    limit = cls._fetch_all_limit
+    if not limit:
+      # TODO: What exception to raise, really?
+      raise ValueError('You must set %s._fetch_all_limit to use fetch_all()' %
+                       cls.__name__)
+    from ndb import tasklets
+    ctx = tasklets.get_context()
+    memcache_key = cls._get_fetch_all_memcache_key(ctx)
+    keys = ctx.memcache_get(memcache_key).get_result()
+    if keys is None:
+      # Fetch all entities and cache their keys.
+      entities = cls.query().fetch(limit)
+      keys = [ent.key for ent in entities]
+      ctx.memcache_add(memcache_key, keys).get_result()
+    else:
+      # Fetch the entities given their keys, possibly from a cache.
+      futures = [key.get_async() for key in keys]
+      entities = filter(None, [fut.get_result() for fut in futures])
+    return entities
+  fetch_all = _fetch_all
 
 
 class Expando(Model):

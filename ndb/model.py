@@ -271,6 +271,7 @@ Property subclass is in the docstring for the Property class.
 __author__ = 'guido@google.com (Guido van Rossum)'
 
 import copy
+import cPickle as pickle
 import datetime
 import zlib
 
@@ -1380,6 +1381,30 @@ def _unpack_user(v):
   return value
 
 
+class PickleProperty(BlobProperty):
+  """A Property whose value is any picklable Python object."""
+
+  def _to_base_type(self, value):
+    return pickle.dumps(value, 2)
+
+  def _from_base_type(self, value):
+    return pickle.loads(value)
+
+
+class JsonProperty(BlobProperty):
+  """A property whose value is any Json-encodable Python object."""
+
+  # Use late import so the dependency is optional.
+
+  def _to_base_type(self, value):
+    import simplejson
+    return simplejson.dumps(value, 2)
+
+  def _from_base_type(self, value):
+    import simplejson
+    return simplejson.loads(value)
+
+
 class UserProperty(Property):
   """A Property whose value is a User object.
 
@@ -1648,7 +1673,7 @@ class StructuredGetForDictMixin(Property):
     value = self._get_value(entity)
     if self._repeated:
       value = [v._to_dict() for v in value]
-    else:
+    elif value is not None:
       value = value._to_dict()
     return value
 
@@ -1764,10 +1789,11 @@ class StructuredProperty(StructuredGetForDictMixin):
     # but that seems a rare case, so for now I don't care.
     ok = super(StructuredProperty, self)._has_value(entity)
     if ok and rest:
-      subent = self._get_value(entity)
-      if subent is None:
+      lst = self._get_base_value_unwrapped_as_list(entity)
+      if len(lst) != 1 or lst == [None]:
         raise RuntimeError('Failed to retrieve sub-entity of StructuredProperty'
                            ' %s' % self._name)
+      subent = lst[0]
       subprop = subent._properties.get(rest[0])
       if subprop is None:
         ok = False

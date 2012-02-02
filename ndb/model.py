@@ -372,7 +372,9 @@ class ModelAdapter(datastore_rpc.AbstractAdapter):
       kind = key.kind()
     modelclass = Model._kind_map.get(kind, self.default_model)
     if modelclass is None:
-      raise KindError("No implementation found for kind '%s'" % kind)
+      raise KindError(
+        "No model class found for kind '%s'. Did you forget to import it?" %
+        kind)
     entity = modelclass._from_pb(pb, key=key, set_key=False)
     if self.want_pbs:
       entity._orig_pb = pb
@@ -638,6 +640,7 @@ class Property(ModelAttribute):
     Returns:
       A FilterNode instance representing the requested comparison.
     """
+    # NOTE: This is also used by query.gql().
     if not self._indexed:
       raise datastore_errors.BadFilterError(
         'Cannot query for unindexed property %s' % self._name)
@@ -1776,7 +1779,10 @@ class StructuredProperty(_StructuredGetForDictMixin):
     # Import late to avoid circular imports.
     from .query import ConjunctionNode, PostFilterNode
     from .query import RepeatedStructuredPropertyPredicate
-    value = self._do_validate(value)  # None is not allowed!
+    if value is None:
+      from .query import FilterNode  # Import late to avoid circular imports.
+      return FilterNode(self._name, op, value)
+    value = self._do_validate(value)
     value = self._call_to_base_type(value)
     filters = []
     match_keys = []
@@ -1862,7 +1868,7 @@ class StructuredProperty(_StructuredGetForDictMixin):
         for unused_name, prop in sorted(value._properties.iteritems()):
           prop._serialize(value, pb, prefix + self._name + '.',
                           self._repeated or parent_repeated)
-      elif parent_repeated:
+      else:
         # Serialize a single None
         super(StructuredProperty, self)._serialize(
           entity, pb, prefix=prefix, parent_repeated=parent_repeated)
@@ -2591,6 +2597,14 @@ class Model(object):
       qry = qry.filter(*args)
     return qry
   query = _query
+
+  @classmethod
+  def _gql(cls, query_string, *args, **kwds):
+    """Run a GQL query."""
+    from .query import gql  # Import late to avoid circular imports.
+    return gql('SELECT * FROM %s %s' % (cls._get_kind(), query_string),
+               *args, **kwds)
+  gql = _gql
 
   def _put(self, **ctx_options):
     """Write this entity to the datastore.

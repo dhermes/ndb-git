@@ -981,7 +981,6 @@ class QueryTests(test_utils.NDBTest):
     self.assertEqual(qry.ancestor, None)
     self.assertEqual(qry.filters, None)
     self.assertEqual(qry.orders, None)
-    self.assertEqual(qry.parameters, None)
 
   def testGqlAncestor(self):
     key = model.Key('Foo', 42)
@@ -991,7 +990,6 @@ class QueryTests(test_utils.NDBTest):
     self.assertEqual(qry.ancestor, key)
     self.assertEqual(qry.filters, None)
     self.assertEqual(qry.orders, None)
-    self.assertEqual(qry.parameters, None)
 
   def testGqlAncestorWithParameter(self):
     qry = query.gql('SELECT * FROM Foo WHERE ANCESTOR IS :1')
@@ -999,7 +997,6 @@ class QueryTests(test_utils.NDBTest):
     self.assertEqual(qry.ancestor, query.Parameter(1))
     self.assertEqual(qry.filters, None)
     self.assertEqual(qry.orders, None)
-    self.assertEqual(qry.parameters, {1: query.Parameter(1)})
 
   def testGqlFilter(self):
     qry = query.gql("SELECT * FROM Foo WHERE name = 'joe' AND rate = 1")
@@ -1010,7 +1007,6 @@ class QueryTests(test_utils.NDBTest):
                        query.FilterNode('name', '=', 'joe'),
                        query.FilterNode('rate', '=', 1)))
     self.assertEqual(qry.orders, None)
-    self.assertEqual(qry.parameters, None)
 
   def testGqlOrder(self):
     qry = query.gql('SELECT * FROM Foo ORDER BY name')
@@ -1036,8 +1032,6 @@ class QueryTests(test_utils.NDBTest):
                        query.ParameterNode(Foo.rate, '=',
                                         query.Parameter('foo'))))
     self.assertEqual(qry.orders, None)
-    self.assertEqual(qry.parameters, {1: query.Parameter(1),
-                                    'foo': query.Parameter('foo')})
 
   def testGqlBindParameters(self):
     pqry = query.gql('SELECT * FROM Foo WHERE name = :1')
@@ -1294,6 +1288,51 @@ class QueryTests(test_utils.NDBTest):
     bazone.put()
     q = Baz.gql("WHERE \"bar.bow\" = 1")
     self.assertEqual([bazar], q.fetch())
+
+  def testGqlKindlessQuery(self):
+    results = query.gql('SELECT *').fetch()
+    self.assertEqual([self.joe, self.jill, self.moe], results)
+
+  def testGqlSubclass(self):
+    # You can pass gql() a subclass of Query and it'll use that.
+    class MyQuery(query.Query):
+      pass
+    q = query._gql("SELECT * FROM Foo WHERE name = :1", query_class=MyQuery)
+    self.assertTrue(isinstance(q, MyQuery))
+    # And bind() preserves the class.
+    qb = q.bind('joe')
+    self.assertTrue(isinstance(qb, MyQuery))
+    # .filter() also preserves the class, as well as default_options.
+    qf = q.filter(Foo.rate == 1)
+    self.assertTrue(isinstance(qf, MyQuery))
+    self.assertEqual(qf.default_options, q.default_options)
+    # Same for .options().
+    qo = q.order(-Foo.name)
+    self.assertTrue(isinstance(qo, MyQuery))
+    self.assertEqual(qo.default_options, q.default_options)
+
+  def testGqlUnusedBindings(self):
+    # Only unused positional bindings raise an error.
+    q = Foo.gql("WHERE ANCESTOR IS :1 AND rate >= :2")
+    qb = q.bind(self.joe.key, 2, foo=42)  # Must not fail
+    self.assertRaises(datastore_errors.BadArgumentError, q.bind)
+    self.assertRaises(datastore_errors.BadArgumentError, q.bind, self.joe.key)
+    self.assertRaises(datastore_errors.BadArgumentError, q.bind,
+                      self.joe.key, 2, 42)
+
+  def testGqlWithBind(self):
+    q = Foo.gql("WHERE name = :1", 'joe')
+    self.assertEqual([self.joe], q.fetch())
+
+  def testGqlAnalyze(self):
+    q = Foo.gql("WHERE name = 'joe'")
+    self.assertEqual([], q.analyze())
+    q = Foo.gql("WHERE name = :1 AND rate = :2")
+    self.assertEqual([1, 2], q.analyze())
+    q = Foo.gql("WHERE name = :foo AND rate = :bar")
+    self.assertEqual(['bar', 'foo'], q.analyze())
+    q = Foo.gql("WHERE tags = :1 AND name = :foo AND rate = :bar")
+    self.assertEqual([1, 'bar', 'foo'], q.analyze())
 
 
 def main():

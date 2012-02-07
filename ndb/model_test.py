@@ -890,6 +890,52 @@ class ModelTests(test_utils.NDBTest):
     self.assertRaises(datastore_errors.BadValueError,
                       setattr, a, 'refs', [model.Key('Bar', 1)])
 
+  def testKeyPropertyPositionalKind(self):
+    class RefModel(model.Model):
+      pass
+    class MyModel(model.Model):
+      ref0 = model.KeyProperty('REF0')
+      ref1 = model.KeyProperty(RefModel)
+      ref2 = model.KeyProperty(RefModel, 'REF2')
+      ref3 = model.KeyProperty('REF3', RefModel)
+      ref4 = model.KeyProperty(None)
+      ref5 = model.KeyProperty(None, None)
+      ref6 = model.KeyProperty(RefModel, None)
+      ref7 = model.KeyProperty(None, RefModel)
+      ref8 = model.KeyProperty('REF8', None)
+      ref9 = model.KeyProperty(None, 'REF9')
+
+    self.assertEqual(MyModel.ref0._kind, None)
+    self.assertEqual(MyModel.ref1._kind, 'RefModel')
+    self.assertEqual(MyModel.ref2._kind, 'RefModel')
+    self.assertEqual(MyModel.ref3._kind, 'RefModel')
+    self.assertEqual(MyModel.ref4._kind, None)
+    self.assertEqual(MyModel.ref5._kind, None)
+    self.assertEqual(MyModel.ref6._kind, 'RefModel')
+    self.assertEqual(MyModel.ref7._kind, 'RefModel')
+    self.assertEqual(MyModel.ref8._kind, None)
+    self.assertEqual(MyModel.ref9._kind, None)
+
+    self.assertEqual(MyModel.ref0._name, 'REF0')
+    self.assertEqual(MyModel.ref1._name, 'ref1')
+    self.assertEqual(MyModel.ref2._name, 'REF2')
+    self.assertEqual(MyModel.ref3._name, 'REF3')
+    self.assertEqual(MyModel.ref4._name, 'ref4')
+    self.assertEqual(MyModel.ref5._name, 'ref5')
+    self.assertEqual(MyModel.ref6._name, 'ref6')
+    self.assertEqual(MyModel.ref7._name, 'ref7')
+    self.assertEqual(MyModel.ref8._name, 'REF8')
+    self.assertEqual(MyModel.ref9._name, 'REF9')
+
+    for args in [(1,), (int,), (1, int), (int, 1),
+                 ('x', 'y'), (RefModel, RefModel),
+                 (None, int), (int, None), (None, 1), (1, None)]:
+      self.assertRaises(TypeError, model.KeyProperty, *args)
+
+    self.assertRaises(TypeError, model.KeyProperty, RefModel, kind='K')
+    self.assertRaises(TypeError, model.KeyProperty, None, RefModel, kind='k')
+    self.assertRaises(TypeError, model.KeyProperty, 'n', RefModel, kind='k')
+
   def testBlobKeyProperty(self):
     class MyModel(model.Model):
       image = model.BlobKeyProperty()
@@ -2730,6 +2776,35 @@ class ModelTests(test_utils.NDBTest):
     self.assertEqual(len(logs), 2)
     self.assertEqual(logs[0], logs[1])
     self.assertNotEqual(before, logs[0])
+
+  def testTransactionalDecoratorExtensions(self):
+    # Test that @transactional(flag=value, ...) works too.
+    @model.transactional()
+    def callback1(log):
+      self.assertTrue(model.in_transaction())
+      ctx = tasklets.get_context()
+      orig_async_commit = ctx._conn.async_commit
+      def wrap_async_commit(options):
+        log.append(options)
+        return orig_async_commit(options)
+      ctx._conn.async_commit = wrap_async_commit
+    log = []
+    callback1(log)
+    self.assertEqual(log, [None])
+
+    @model.transactional(retries=42)
+    def callback2(log):
+      self.assertTrue(model.in_transaction())
+      ctx = tasklets.get_context()
+      orig_async_commit = ctx._conn.async_commit
+      def wrap_async_commit(options):
+        log.append(options)
+        return orig_async_commit(options)
+      ctx._conn.async_commit = wrap_async_commit
+    log = []
+    callback2(log)
+    self.assertEqual(len(log), 1)
+    self.assertEqual(log[0].retries, 42)
 
   def testPropertyFilters(self):
     class M(model.Model):

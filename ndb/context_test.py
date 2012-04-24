@@ -649,6 +649,7 @@ class ContextTests(test_utils.NDBTest):
       self.assertEqual(ent.key.flat(), ('Foo', i + 1))
 
   def testContext_TransactionFailed(self):
+    # XXX Why is this called 'Failed'?  There's no failure here.
     @tasklets.tasklet
     def foo():
       key = model.Key(flat=('Foo', 1))
@@ -772,6 +773,47 @@ class ContextTests(test_utils.NDBTest):
     eventloop.run()  # Wait for memcache.set() RPCs
     self.assertNotEqual(memcache.get(skey1), None)
     self.assertNotEqual(memcache.get(skey2), None)
+
+  def testContext_TransactionCallBackTasklet(self):
+    class Foo(model.Model):
+      n = model.IntegerProperty()
+
+    @tasklets.tasklet
+    def inner_callback():
+      self.assertTrue(tasklets.get_context().in_transaction())
+      x = yield Foo.get_or_insert_async('x', n=0)
+      x.n += 1
+      yield x.put_async()
+      raise tasklets.Return(x)
+
+    # 1. Regular case.
+    x = self.ctx.transaction(inner_callback).get_result()
+    self.assertEqual(x, Foo(n=1, id='x'))
+    x.key.delete()
+
+    # 2. Case for propagation=MANDATORY.
+    def outer_callback():
+      ctx = tasklets.get_context()
+      self.assertTrue(ctx.in_transaction())
+      f = ctx.transaction(
+        inner_callback, propagation=context.TransactionOptions.MANDATORY)
+      x = f.get_result()
+      self.assertEqual(x, Foo(n=1, id='x'))
+      return x
+    x = self.ctx.transaction(outer_callback).get_result()
+    x.key.delete()
+
+    # 3. Case for propagation=ALLOWED.
+    def outer_callback():
+      ctx = tasklets.get_context()
+      self.assertTrue(ctx.in_transaction())
+      f = ctx.transaction(
+        inner_callback, propagation=context.TransactionOptions.ALLOWED)
+      x = f.get_result()
+      self.assertEqual(x, Foo(n=1, id='x'))
+      return x
+    x = self.ctx.transaction(outer_callback).get_result()
+    x.key.delete()
 
   def testDefaultContextTransaction(self):
     @tasklets.synctasklet
@@ -1098,8 +1140,6 @@ class ContextTests(test_utils.NDBTest):
 
   def start_test_server(self):
     host = '127.0.0.1'
-    lock = threading.Lock()
-    lock.acquire()
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     for i in range(10):
@@ -1111,9 +1151,8 @@ class ContextTests(test_utils.NDBTest):
         continue
     else:
       self.fail('Could not find an unused port in 10 tries')
+    s.listen(1)
     def run():
-      s.listen(1)
-      lock.release()  # Signal socket is all set up.
       c, addr = s.accept()
       s.close()
       c.recv(1000)  # Throw away request.
@@ -1122,18 +1161,11 @@ class ContextTests(test_utils.NDBTest):
     t = threading.Thread(target=run)
     t.setDaemon(True)
     t.start()
-    return host, port, lock
+    return host, port
 
   def testUrlFetch(self):
     self.testbed.init_urlfetch_stub()
-    host, port, lock = self.start_test_server()
-    # Block until socket is set up, or 5 seconds have passed.
-    for i in xrange(500):
-      if lock.acquire(False):
-        break
-      time.sleep(0.01)
-    else:
-      self.fail('Socket was not ready in 5 seconds')
+    host, port = self.start_test_server()
     fut = self.ctx.urlfetch('http://%s:%d' % (host, port))
     result = fut.get_result()
     self.assertEqual(result.status_code, 200)

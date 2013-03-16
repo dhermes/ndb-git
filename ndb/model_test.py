@@ -1,4482 +1,3766 @@
-"""Tests for model.py."""
+"""Model and Property classes and associated stuff.
 
+A model class represents the structure of entities stored in the
+datastore.  Applications define model classes to indicate the
+structure of their entities, then instantiate those model classes
+to create entities.
+
+All model classes must inherit (directly or indirectly) from Model.
+Through the magic of metaclasses, straightforward assignments in the
+model class definition can be used to declare the model's structure:
+
+  class Person(Model):
+    name = StringProperty()
+    age = IntegerProperty()
+
+We can now create a Person entity and write it to the datastore:
+
+  p = Person(name='Arthur Dent', age=42)
+  k = p.put()
+
+The return value from put() is a Key (see the documentation for
+ndb/key.py), which can be used to retrieve the same entity later:
+
+  p2 = k.get()
+  p2 == p  # Returns True
+
+To update an entity, simple change its attributes and write it back
+(note that this doesn't change the key):
+
+  p2.name = 'Arthur Philip Dent'
+  p2.put()
+
+We can also delete an entity (by using the key):
+
+  k.delete()
+
+The property definitions in the class body tell the system the names
+and the types of the fields to be stored in the datastore, whether
+they must be indexed, their default value, and more.
+
+Many different Property types exist.  Most are indexed by default, the
+exceptions indicated in the list below:
+
+- StringProperty: a short text string, limited to 500 bytes
+
+- TextProperty: an unlimited text string; unindexed
+
+- BlobProperty: an unlimited byte string; unindexed
+
+- IntegerProperty: a 64-bit signed integer
+
+- FloatProperty: a double precision floating point number
+
+- BooleanProperty: a bool value
+
+- DateTimeProperty: a datetime object.  Note: App Engine always uses
+  UTC as the timezone
+
+- DateProperty: a date object
+
+- TimeProperty: a time object
+
+- GeoPtProperty: a geographical location, i.e. (latitude, longitude)
+
+- KeyProperty: a datastore Key value, optionally constrained to
+  referring to a specific kind
+
+- UserProperty: a User object (for backwards compatibility only)
+
+- StructuredProperty: a field that is itself structured like an
+  entity; see below for more details
+
+- LocalStructuredProperty: like StructuredProperty but the on-disk
+  representation is an opaque blob; unindexed
+
+- ComputedProperty: a property whose value is computed from other
+  properties by a user-defined function.  The property value is
+  written to the datastore so that it can be used in queries, but the
+  value from the datastore is not used when the entity is read back
+
+- GenericProperty: a property whose type is not constrained; mostly
+  used by the Expando class (see below) but also usable explicitly
+
+- JsonProperty: a property whose value is any object that can be
+  serialized using JSON; the value written to the datastore is a JSON
+  representation of that object
+
+- PickleProperty: a property whose value is any object that can be
+  serialized using Python's pickle protocol; the value written to the
+  datastore is the pickled representation of that object, using the
+  highest available pickle protocol
+
+Most Property classes have similar constructor signatures.  They
+accept several optional keyword arguments:
+
+- name=<string>: the name used to store the property value in the
+  datastore.  Unlike the following options, this may also be given as
+  a positional argument
+
+- indexed=<bool>: indicates whether the property should be indexed
+  (allowing queries on this property's value)
+
+- repeated=<bool>: indicates that this property can have multiple
+  values in the same entity.
+
+- required=<bool>: indicates that this property must be given a value
+
+- default=<value>: a default value if no explicit value is given
+
+- choices=<list of values>: a list or tuple of allowable values
+
+- validator=<function>: a general-purpose validation function.  It
+  will be called with two arguments (prop, value) and should either
+  return the validated value or raise an exception.  It is also
+  allowed for the function to modify the value, but calling it again
+  on the modified value should not modify the value further.  (For
+  example: a validator that returns value.strip() or value.lower() is
+  fine, but one that returns value + '$' is not.)
+
+- verbose_name=<value>: A human readable name for this property.  This
+  human readable name can be used for html form labels.
+
+The repeated, required and default options are mutually exclusive: a
+repeated property cannot be required nor can it specify a default
+value (the default is always an empty list and an empty list is always
+an allowed value), and a required property cannot have a default.
+
+Some property types have additional arguments.  Some property types
+do not support all options.
+
+Repeated properties are always represented as Python lists; if there
+is only one value, the list has only one element.  When a new list is
+assigned to a repeated property, all elements of the list are
+validated.  Since it is also possible to mutate lists in place,
+repeated properties are re-validated before they are written to the
+datastore.
+
+No validation happens when an entity is read from the datastore;
+however property values read that have the wrong type (e.g. a string
+value for an IntegerProperty) are ignored.
+
+For non-repeated properties, None is always a possible value, and no
+validation is called when the value is set to None.  However for
+required properties, writing the entity to the datastore requires
+the value to be something other than None (and valid).
+
+The StructuredProperty is different from most other properties; it
+lets you define a sub-structure for your entities.  The substructure
+itself is defined using a model class, and the attribute value is an
+instance of that model class.  However it is not stored in the
+datastore as a separate entity; instead, its attribute values are
+included in the parent entity using a naming convention (the name of
+the structured attribute followed by a dot followed by the name of the
+subattribute).  For example:
+
+  class Address(Model):
+    street = StringProperty()
+    city = StringProperty()
+
+  class Person(Model):
+    name = StringProperty()
+    address = StructuredProperty(Address)
+
+  p = Person(name='Harry Potter',
+             address=Address(street='4 Privet Drive',
+                             city='Little Whinging'))
+  k.put()
+
+This would write a single 'Person' entity with three attributes (as
+you could verify using the Datastore Viewer in the Admin Console):
+
+  name = 'Harry Potter'
+  address.street = '4 Privet Drive'
+  address.city = 'Little Whinging'
+
+Structured property types can be nested arbitrarily deep, but in a
+hierarchy of nested structured property types, only one level can have
+the repeated flag set.  It is fine to have multiple structured
+properties referencing the same model class.
+
+It is also fine to use the same model class both as a top-level entity
+class and as for a structured property; however queries for the model
+class will only return the top-level entities.
+
+The LocalStructuredProperty works similar to StructuredProperty on the
+Python side.  For example:
+
+  class Address(Model):
+    street = StringProperty()
+    city = StringProperty()
+
+  class Person(Model):
+    name = StringProperty()
+    address = LocalStructuredProperty(Address)
+
+  p = Person(name='Harry Potter',
+             address=Address(street='4 Privet Drive',
+                             city='Little Whinging'))
+  k.put()
+
+However the data written to the datastore is different; it writes a
+'Person' entity with a 'name' attribute as before and a single
+'address' attribute whose value is a blob which encodes the Address
+value (using the standard"protocol buffer" encoding).
+
+Sometimes the set of properties is not known ahead of time.  In such
+cases you can use the Expando class.  This is a Model subclass that
+creates properties on the fly, both upon assignment and when loading
+an entity from the datastore.  For example:
+
+  class SuperPerson(Expando):
+    name = StringProperty()
+    superpower = StringProperty()
+
+  razorgirl = SuperPerson(name='Molly Millions',
+                          superpower='bionic eyes, razorblade hands',
+                          rasta_name='Steppin\' Razor',
+                          alt_name='Sally Shears')
+  elastigirl = SuperPerson(name='Helen Parr',
+                           superpower='stretchable body')
+  elastigirl.max_stretch = 30  # Meters
+
+You can inspect the properties of an expando instance using the
+_properties attribute:
+
+  >>> print razorgirl._properties.keys()
+  ['rasta_name', 'name', 'superpower', 'alt_name']
+  >>> print elastigirl._properties
+  {'max_stretch': GenericProperty('max_stretch'),
+   'name': StringProperty('name'),
+   'superpower': StringProperty('superpower')}
+
+Note: this property exists for plain Model instances too; it is just
+not as interesting for those.
+
+The Model class offers basic query support.  You can create a Query
+object by calling the query() class method.  Iterating over a Query
+object returns the entities matching the query one at a time.
+
+Query objects are fully described in the docstring for query.py, but
+there is one handy shortcut that is only available through
+Model.query(): positional arguments are interpreted as filter
+expressions which are combined through an AND operator.  For example:
+
+  Person.query(Person.name == 'Harry Potter', Person.age >= 11)
+
+is equivalent to:
+
+  Person.query().filter(Person.name == 'Harry Potter', Person.age >= 11)
+
+Keyword arguments passed to .query() are passed along to the Query()
+constructor.
+
+It is possible to query for field values of stuctured properties.  For
+example:
+
+  qry = Person.query(Person.address.city == 'London')
+
+A number of top-level functions also live in this module:
+
+- transaction() runs a function inside a transaction
+- get_multi() reads multiple entities at once
+- put_multi() writes multiple entities at once
+- delete_multi() deletes multiple entities at once
+
+All these have a corresponding *_async() variant as well.
+The *_multi_async() functions return a list of Futures.
+
+And finally these (without async variants):
+
+- in_transaction() tests whether you are currently running in a transaction
+- @transactional decorates functions that should be run in a transaction
+
+There are many other interesting features.  For example, Model
+subclasses may define pre-call and post-call hooks for most operations
+(get, put, delete, allocate_ids), and Property classes may be
+subclassed to suit various needs.  Documentation for writing a
+Property subclass is in the docstring for the Property class.
+"""
+
+__author__ = 'guido@google.com (Guido van Rossum)'
+
+import copy
+import cPickle as pickle
 import datetime
-import difflib
-import os
-import pickle
-import re
-import unittest
+import logging
+import zlib
 
 from .google_imports import datastore_errors
 from .google_imports import datastore_types
-from .google_imports import db
-from .google_imports import entity_pb
-from .google_imports import memcache
-from .google_imports import namespace_manager
 from .google_imports import users
-from .google_test_imports import datastore_stub_util
+from .google_imports import datastore_query
+from .google_imports import datastore_rpc
+from .google_imports import entity_pb
 
-try:
-  import json
-except ImportError:
-  import simplejson as json
+from . import utils
 
-from . import context
-from . import eventloop
-from . import key
-from . import model
-from . import query
-from . import tasklets
-from . import test_utils
+# NOTE: 'key' is a common local variable name.
+from . import key as key_module
+Key = key_module.Key  # For export.
 
-TESTUSER = users.User('test@example.com', 'example.com', '123')
-AMSTERDAM = model.GeoPt(52.35, 4.9166667)
+# NOTE: Property and Error classes are added later.
+__all__ = ['Key', 'BlobKey', 'GeoPt', 'Rollback',
+           'Index', 'IndexState', 'IndexProperty',
+           'ModelAdapter', 'ModelAttribute',
+           'ModelKey', 'MetaModel', 'Model', 'Expando',
+           'transaction', 'transaction_async',
+           'in_transaction', 'transactional', 'non_transactional',
+           'get_multi', 'get_multi_async',
+           'put_multi', 'put_multi_async',
+           'delete_multi', 'delete_multi_async',
+           'get_indexes', 'get_indexes_async',
+           'make_connection',
+           ]
 
-GOLDEN_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Model"
-      id: 42
-    }
-  >
->
-entity_group <
-  Element {
-    type: "Model"
-    id: 42
+
+BlobKey = datastore_types.BlobKey
+GeoPt = datastore_types.GeoPt
+
+Rollback = datastore_errors.Rollback
+
+
+class KindError(datastore_errors.BadValueError):
+  """Raised when an implementation for a kind can't be found.
+
+  Also raised when the Kind is not an 8-bit string.
+  """
+
+
+class InvalidPropertyError(datastore_errors.Error):
+  """Raised when a property is not applicable to a given use.
+
+  For example, a property must exist and be indexed to be used in a query's
+  projection or group by clause.
+  """
+
+# Mapping for legacy support.
+BadProjectionError = InvalidPropertyError
+
+
+class UnprojectedPropertyError(datastore_errors.Error):
+  """Raised when getting a property value that's not in the projection."""
+
+
+class ReadonlyPropertyError(datastore_errors.Error):
+  """Raised when attempting to set a property value that is read-only."""
+
+
+class ComputedPropertyError(ReadonlyPropertyError):
+  """Raised when attempting to set a value to or delete a computed property."""
+
+
+# Various imported limits.
+_MAX_LONG = key_module._MAX_LONG
+_MAX_STRING_LENGTH = datastore_types._MAX_STRING_LENGTH
+
+# Map index directions to human-readable strings.
+_DIR_MAP = {
+  entity_pb.Index_Property.ASCENDING: 'asc',
+  entity_pb.Index_Property.DESCENDING: 'desc',
   }
->
-property <
-  name: "b"
-  value <
-    booleanValue: true
-  >
-  multiple: false
->
-property <
-  name: "d"
-  value <
-    doubleValue: 2.5
-  >
-  multiple: false
->
-property <
-  name: "k"
-  value <
-    ReferenceValue {
-      app: "_"
-      PathElement {
-        type: "Model"
-        id: 42
-      }
-    }
-  >
-  multiple: false
->
-property <
-  name: "p"
-  value <
-    int64Value: 42
-  >
-  multiple: false
->
-property <
-  name: "q"
-  value <
-    stringValue: "hello"
-  >
-  multiple: false
->
-property <
-  name: "u"
-  value <
-    UserValue {
-      email: "test@example.com"
-      auth_domain: "example.com"
-      gaiaid: 0
-      obfuscated_gaiaid: "123"
-    }
-  >
-  multiple: false
->
-property <
-  name: "xy"
-  value <
-    PointValue {
-      x: 52.35
-      y: 4.9166667
-    }
-  >
-  multiple: false
->
-"""
-
-INDEXED_PB = re.sub('Model', 'MyModel', GOLDEN_PB)
-
-UNINDEXED_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "MyModel"
-      id: 0
-    }
-  >
->
-entity_group <
->
-raw_property <
-  meaning: 14
-  name: "b"
-  value <
-    stringValue: "\\000\\377"
-  >
-  multiple: false
->
-raw_property <
-  meaning: 15
-  name: "t"
-  value <
-    stringValue: "Hello world\\341\\210\\264"
-  >
-  multiple: false
->
-"""
-
-PERSON_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Person"
-      id: 0
-    }
-  >
->
-entity_group <
->
-property <
-  name: "address.city"
-  value <
-    stringValue: "Mountain View"
-  >
-  multiple: false
->
-property <
-  name: "address.street"
-  value <
-    stringValue: "1600 Amphitheatre"
-  >
-  multiple: false
->
-property <
-  name: "name"
-  value <
-    stringValue: "Google"
-  >
-  multiple: false
->
-"""
-
-NESTED_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Person"
-      id: 0
-    }
-  >
->
-entity_group <
->
-property <
-  name: "address.home.city"
-  value <
-    stringValue: "Mountain View"
-  >
-  multiple: false
->
-property <
-  name: "address.home.street"
-  value <
-    stringValue: "1600 Amphitheatre"
-  >
-  multiple: false
->
-property <
-  name: "address.work.city"
-  value <
-    stringValue: "San Francisco"
-  >
-  multiple: false
->
-property <
-  name: "address.work.street"
-  value <
-    stringValue: "345 Spear"
-  >
-  multiple: false
->
-property <
-  name: "name"
-  value <
-    stringValue: "Google"
-  >
-  multiple: false
->
-"""
-
-RECURSIVE_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Tree"
-      id: 0
-    }
-  >
->
-entity_group <
->
-property <
-  name: "root.left.left.left"
-  value <
-  >
-  multiple: false
->
-property <
-  name: "root.left.left.name"
-  value <
-    stringValue: "a1a"
-  >
-  multiple: false
->
-property <
-  name: "root.left.left.rite"
-  value <
-  >
-  multiple: false
->
-property <
-  name: "root.left.name"
-  value <
-    stringValue: "a1"
-  >
-  multiple: false
->
-property <
-  name: "root.left.rite.left"
-  value <
-  >
-  multiple: false
->
-property <
-  name: "root.left.rite.name"
-  value <
-    stringValue: "a1b"
-  >
-  multiple: false
->
-property <
-  name: "root.left.rite.rite"
-  value <
-  >
-  multiple: false
->
-property <
-  name: "root.name"
-  value <
-    stringValue: "a"
-  >
-  multiple: false
->
-property <
-  name: "root.rite.left"
-  value <
-  >
-  multiple: false
->
-property <
-  name: "root.rite.name"
-  value <
-    stringValue: "a2"
-  >
-  multiple: false
->
-property <
-  name: "root.rite.rite.left"
-  value <
-  >
-  multiple: false
->
-property <
-  name: "root.rite.rite.name"
-  value <
-    stringValue: "a2b"
-  >
-  multiple: false
->
-property <
-  name: "root.rite.rite.rite"
-  value <
-  >
-  multiple: false
->
-"""
-
-MULTI_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Person"
-      id: 0
-    }
-  >
->
-entity_group <
->
-property <
-  name: "address"
-  value <
-    stringValue: "345 Spear"
-  >
-  multiple: true
->
-property <
-  name: "address"
-  value <
-    stringValue: "San Francisco"
-  >
-  multiple: true
->
-property <
-  name: "name"
-  value <
-    stringValue: "Google"
-  >
-  multiple: false
->
-"""
-
-MULTIINSTRUCT_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Person"
-      id: 0
-    }
-  >
->
-entity_group <
->
-property <
-  name: "address.label"
-  value <
-    stringValue: "work"
-  >
-  multiple: false
->
-property <
-  name: "address.line"
-  value <
-    stringValue: "345 Spear"
-  >
-  multiple: true
->
-property <
-  name: "address.line"
-  value <
-    stringValue: "San Francisco"
-  >
-  multiple: true
->
-property <
-  name: "name"
-  value <
-    stringValue: "Google"
-  >
-  multiple: false
->
-"""
-
-MULTISTRUCT_PB = """\
-key <
-  app: "_"
-  path <
-    Element {
-      type: "Person"
-      id: 0
-    }
-  >
->
-entity_group <
->
-property <
-  name: "address.label"
-  value <
-    stringValue: "work"
-  >
-  multiple: true
->
-property <
-  name: "address.text"
-  value <
-    stringValue: "San Francisco"
-  >
-  multiple: true
->
-property <
-  name: "address.label"
-  value <
-    stringValue: "home"
-  >
-  multiple: true
->
-property <
-  name: "address.text"
-  value <
-    stringValue: "Mountain View"
-  >
-  multiple: true
->
-property <
-  name: "name"
-  value <
-    stringValue: "Google"
-  >
-  multiple: false
->
-"""
-
-
-class ModelTests(test_utils.NDBTest):
-
-  def tearDown(self):
-    self.assertTrue(model.Model._properties == {})
-    self.assertTrue(model.Expando._properties == {})
-    super(ModelTests, self).tearDown()
-
-  the_module = model
-
-  def testConstruct(self):
-    self.assertRaises(TypeError,
-                      model.Model,
-                      'Unsupported positional argument')
-
-  def testKey(self):
-    m = model.Model()
-    self.assertEqual(m.key, None)
-    k = model.Key(flat=['ParentModel', 42, 'Model', 'foobar'])
-    m.key = k
-    self.assertEqual(m.key, k)
-    del m.key
-    self.assertEqual(m.key, None)
-    # incomplete key
-    k2 = model.Key(flat=['ParentModel', 42, 'Model', None])
-    m.key = k2
-    self.assertEqual(m.key, k2)
-
-  def testIncompleteKey(self):
-    m = model.Model()
-    k = model.Key(flat=['Model', None])
-    m.key = k
-    pb = m._to_pb()
-    m2 = model.Model._from_pb(pb)
-    self.assertEqual(m2, m)
-
-  def testIdAndParent(self):
-    p = model.Key('ParentModel', 'foo')
-
-    # key name
-    m = model.Model(id='bar')
-    m2 = model.Model._from_pb(m._to_pb())
-    self.assertEqual(m2.key, model.Key('Model', 'bar'))
-
-    # key name + parent
-    m = model.Model(id='bar', parent=p)
-    m2 = model.Model._from_pb(m._to_pb())
-    self.assertEqual(m2.key, model.Key('ParentModel', 'foo', 'Model', 'bar'))
-
-    # key id
-    m = model.Model(id=42)
-    m2 = model.Model._from_pb(m._to_pb())
-    self.assertEqual(m2.key, model.Key('Model', 42))
-
-    # key id + parent
-    m = model.Model(id=42, parent=p)
-    m2 = model.Model._from_pb(m._to_pb())
-    self.assertEqual(m2.key, model.Key('ParentModel', 'foo', 'Model', 42))
-
-    # parent
-    m = model.Model(parent=p)
-    m2 = model.Model._from_pb(m._to_pb())
-    self.assertEqual(m2.key, model.Key('ParentModel', 'foo', 'Model', None))
-
-    # not key -- invalid
-    self.assertRaises(datastore_errors.BadValueError, model.Model, key='foo')
-
-    # wrong key kind -- invalid
-    k = model.Key('OtherModel', 'bar')
-    class MyModel(model.Model):
-      pass
-    self.assertRaises(model.KindError, MyModel, key=k)
-
-    # incomplete parent -- invalid
-    p2 = model.Key('ParentModel', None)
-    self.assertRaises(datastore_errors.BadArgumentError, model.Model,
-                      parent=p2)
-    self.assertRaises(datastore_errors.BadArgumentError, model.Model,
-                      id='bar', parent=p2)
-
-    # key + id -- invalid
-    k = model.Key('Model', 'bar')
-    self.assertRaises(datastore_errors.BadArgumentError, model.Model, key=k,
-                      id='bar')
-
-    # key + parent -- invalid
-    k = model.Key('Model', 'bar', parent=p)
-    self.assertRaises(datastore_errors.BadArgumentError, model.Model, key=k,
-                      parent=p)
-
-    # key + id + parent -- invalid
-    self.assertRaises(datastore_errors.BadArgumentError, model.Model, key=k,
-                      id='bar', parent=p)
-
-  def testNamespaceAndApp(self):
-    m = model.Model(namespace='')
-    self.assertEqual(m.key.namespace(), '')
-    m = model.Model(namespace='x')
-    self.assertEqual(m.key.namespace(), 'x')
-    m = model.Model(app='y')
-    self.assertEqual(m.key.app(), 'y')
-
-  def testNamespaceAndAppErrors(self):
-    self.assertRaises(datastore_errors.BadArgumentError,
-                      model.Model, key=model.Key('X', 1), namespace='')
-    self.assertRaises(datastore_errors.BadArgumentError,
-                      model.Model, key=model.Key('X', 1), namespace='x')
-    self.assertRaises(datastore_errors.BadArgumentError,
-                      model.Model, key=model.Key('X', 1), app='y')
-
-  def testPropsOverrideConstructorArgs(self):
-    class MyModel(model.Model):
-      key = model.StringProperty()
-      id = model.StringProperty()
-      app = model.StringProperty()
-      namespace = model.StringProperty()
-      parent = model.StringProperty()
-    root = model.Key('Root', 1, app='app', namespace='ns')
-    key = model.Key(MyModel, 42, parent=root)
-
-    a = MyModel(_key=key)
-    self.assertEqual(a._key, key)
-    self.assertEqual(a.key, None)
-
-    b = MyModel(_id=42, _app='app', _namespace='ns', _parent=root)
-    self.assertEqual(b._key, key)
-    self.assertEqual(b.key, None)
-    self.assertEqual(b.id, None)
-    self.assertEqual(b.app, None)
-    self.assertEqual(b.namespace, None)
-    self.assertEqual(b.parent, None)
-
-    c = MyModel(key='key', id='id', app='app', namespace='ns', parent='root')
-    self.assertEqual(c._key, None)
-    self.assertEqual(c.key, 'key')
-    self.assertEqual(c.id, 'id')
-    self.assertEqual(c.app, 'app')
-    self.assertEqual(c.namespace, 'ns')
-    self.assertEqual(c.parent, 'root')
-
-    d = MyModel(_id=42, _app='app', _namespace='ns', _parent=root,
-                key='key', id='id', app='app', namespace='ns', parent='root')
-    self.assertEqual(d._key, key)
-    self.assertEqual(d.key, 'key')
-    self.assertEqual(d.id, 'id')
-    self.assertEqual(d.app, 'app')
-    self.assertEqual(d.namespace, 'ns')
-    self.assertEqual(d.parent, 'root')
-
-  def testAdapter(self):
-    class Foo(model.Model):
-      name = model.StringProperty()
-    ad = model.ModelAdapter()
-    foo1 = Foo(name='abc')
-    pb1 = ad.entity_to_pb(foo1)
-    foo2 = ad.pb_to_entity(pb1)
-    self.assertEqual(foo1, foo2)
-    self.assertTrue(foo2.key is None)
-    pb2 = foo2._to_pb(set_key=False)
-    self.assertRaises(model.KindError, ad.pb_to_entity, pb2)
-    ad = model.ModelAdapter(Foo)
-    foo3 = ad.pb_to_entity(pb2)
-    self.assertEqual(foo3, foo2)
-
-    key1 = model.Key(Foo, 1)
-    pbk1 = ad.key_to_pb(key1)
-    key2 = ad.pb_to_key(pbk1)
-    self.assertEqual(key1, key2)
-
-  def testPropertyVerboseNameAttribute(self):
-    class Foo(model.Model):
-      name = model.StringProperty(verbose_name='Full name')
-    np = Foo._properties['name']
-    self.assertEqual('Full name', np._verbose_name)
-
-  def testProjectedEntities(self):
-    class Foo(model.Expando):
-      a = model.StringProperty()
-      b = model.StringProperty()
-
-    ent0 = Foo()
-    self.assertEqual(ent0._projection, ())
-
-    ent1 = Foo(projection=('a',))
-    self.assertEqual(ent1._projection, ('a',))
-    self.assertNotEqual(ent0, ent1)
-    self.assertEqual(ent1.a, None)
-    ent2 = Foo(projection=['a'])
-    self.assertEqual(ent2._projection, ('a',))
-    self.assertEqual(ent1, ent2)
-    self.assertRaises(TypeError, Foo, projection=42)
-    self.assertRaises(model.UnprojectedPropertyError, lambda: ent1.b)
-    self.assertRaises(model.ReadonlyPropertyError, setattr, ent1, 'a', 'a')
-    self.assertRaises(model.ReadonlyPropertyError, setattr, ent1, 'b', 'b')
-    # Dynamic property creation should fail also:
-    self.assertRaises(model.ReadonlyPropertyError, setattr, ent1, 'c', 'c')
-
-    ent2 = Foo(_projection=['a'])
-    self.assertEqual(ent2._projection, ('a',))
-    self.assertEqual(repr(ent2), "Foo(_projection=('a',))")
-    self.assertRaises(datastore_errors.BadRequestError, ent2.put)
-
-    ent3 = Foo(_projection=('a',), id=42)  # Sets the key
-    self.assertEqual(ent3._projection, ('a',))
-    self.assertEqual(repr(ent3),
-                     "Foo(key=Key('Foo', 42), _projection=('a',))")
-    ent3.key.delete()  # No failure
-
-    # Another one that differs only in projection.
-    ent4 = Foo(_projection=('a', 'b'), id=42)
-    self.assertEqual(ent4._projection, ('a', 'b'))
-    self.assertEqual(repr(ent4),
-                     "Foo(key=Key('Foo', 42), _projection=('a', 'b'))")
-    self.assertNotEqual(ent3, ent4)
-
-  def testProjectionToDict(self):
-    class Foo(model.Model):
-      bar = model.StringProperty()
-      baz = model.StringProperty('bletch', repeated=True)
-    foo1 = Foo(bar='bar1', baz=['baz1'])
-    foo1.put()
-    foo2 = Foo.query().get(projection=['bar'])
-    self.assertEqual(foo2._to_dict(), {'bar': 'bar1'})
-    foo3 = Foo.query().get(projection=[Foo.baz])
-    self.assertEqual(foo3._to_dict(), {'baz': ['baz1']})
-    class Bar(model.Model):
-      foo = model.StructuredProperty(Foo)
-      baz = model.StringProperty()
-    bar1 = Bar(foo=foo1, baz='baz2')
-    bar1.put()
-    bar2 = Bar.query().get(projection=['foo.bar'])
-    self.assertEqual(bar2.to_dict(), {'foo': {'bar': 'bar1'}})
-    bar3 = Bar.query().get(projection=['baz'])
-    self.assertEqual(bar3.to_dict(), {'baz': 'baz2'})
-
-  def testBadProjectionErrorRaised(self):
-    # Note: Projections are not checked on entity construction;
-    # only on queries.
-    class Inner(model.Model):
-      name = model.StringProperty()
-      rank = model.IntegerProperty()
-    q = Inner.query()
-    q.fetch(projection=['name', 'rank'])
-    self.assertRaises(model.BadProjectionError,
-                      q.fetch, projection=['name.foo'])
-    self.assertRaises(model.BadProjectionError,
-                      q.fetch, projection=['booh'])
-    class Outer(model.Expando):
-      inner = model.StructuredProperty(Inner)
-      blob = model.BlobProperty()
-      tag = model.StringProperty()
-    q = Outer.query()
-    q.fetch(projection=['tag', 'inner.name', 'inner.rank', 'whatever'])
-    self.assertRaises(model.BadProjectionError,
-                      q.fetch, projection=['inner'])
-    self.assertRaises(model.BadProjectionError,
-                      q.fetch, projection=['inner.name.foo'])
-    self.assertRaises(model.BadProjectionError,
-                      q.fetch, projection=['inner.booh'])
-    self.assertRaises(model.BadProjectionError,
-                      q.fetch, projection=['blob'])
-
-  def testQuery(self):
-    class MyModel(model.Model):
-      p = model.IntegerProperty()
-
-    q = MyModel.query()
-    self.assertTrue(isinstance(q, query.Query))
-    self.assertEqual(q.kind, 'MyModel')
-    self.assertEqual(q.ancestor, None)
-
-    k = model.Key(flat=['Model', 1])
-    q = MyModel.query(ancestor=k)
-    self.assertEqual(q.kind, 'MyModel')
-    self.assertEqual(q.ancestor, k)
-
-    k0 = model.Key(flat=['Model', None])
-    self.assertRaises(Exception, MyModel.query, ancestor=k0)
-
-  def testQueryWithFilter(self):
-    class MyModel(model.Model):
-      p = model.IntegerProperty()
-
-    q = MyModel.query(MyModel.p >= 0)
-    self.assertTrue(isinstance(q, query.Query))
-    self.assertEqual(q.kind, 'MyModel')
-    self.assertEqual(q.ancestor, None)
-    self.assertTrue(q.filters is not None)
-
-    q2 = MyModel.query().filter(MyModel.p >= 0)
-    self.assertEqual(q.filters, q2.filters)
-
-  def testQueryForNone(self):
-    class MyModel(model.Model):
-      b = model.BooleanProperty()
-      bb = model.BlobProperty(indexed=True)
-      d = model.DateProperty()
-      f = model.FloatProperty()
-      i = model.IntegerProperty()
-      k = model.KeyProperty()
-      s = model.StringProperty()
-      t = model.TimeProperty()
-      u = model.UserProperty()
-      xy = model.GeoPtProperty()
-    m1 = MyModel()
-    m1.put()
-    m2 = MyModel(
-      b=True,
-      bb='z',
-      d=datetime.date.today(),
-      f=3.14,
-      i=1,
-      k=m1.key,
-      s='a',
-      t=datetime.time(),
-      u=TESTUSER,
-      xy=AMSTERDAM,
-      )
-    m2.put()
-    q = MyModel.query(
-      MyModel.b == None,
-      MyModel.bb == None,
-      MyModel.d == None,
-      MyModel.f == None,
-      MyModel.i == None,
-      MyModel.k == None,
-      MyModel.s == None,
-      MyModel.t == None,
-      MyModel.u == None,
-      MyModel.xy == None,
-      )
-    r = q.fetch()
-    self.assertEqual(r, [m1])
-    qq = [
-      MyModel.query(MyModel.b != None),
-      MyModel.query(MyModel.bb != None),
-      MyModel.query(MyModel.d != None),
-      MyModel.query(MyModel.f != None),
-      MyModel.query(MyModel.i != None),
-      MyModel.query(MyModel.k != None),
-      MyModel.query(MyModel.s != None),
-      MyModel.query(MyModel.t != None),
-      MyModel.query(MyModel.u != None),
-      MyModel.query(MyModel.xy != None),
-      ]
-    for q in qq:
-      r = q.fetch()
-      self.assertEqual(r, [m2], str(q))
-
-  def testBottom(self):
-    a = model._BaseValue(42)
-    b = model._BaseValue(42)
-    c = model._BaseValue('hello')
-    self.assertEqual("_BaseValue(42)", repr(a))
-    self.assertEqual("_BaseValue('hello')", repr(c))
-    self.assertTrue(a == b)
-    self.assertFalse(a != b)
-    self.assertTrue(b != c)
-    self.assertFalse(b == c)
-    self.assertFalse(a == 42)
-    self.assertTrue(a != 42)
-
-  def testCompressedValue(self):
-    a = model._CompressedValue('xyz')
-    b = model._CompressedValue('xyz')
-    c = model._CompressedValue('abc')
-    self.assertEqual("_CompressedValue('abc')", repr(c))
-    self.assertTrue(a == b)
-    self.assertFalse(a != b)
-    self.assertTrue(b != c)
-    self.assertFalse(b == c)
-    self.assertFalse(a == 'xyz')
-    self.assertTrue(a != 'xyz')
-
-  def testProperty(self):
-    class MyModel(model.Model):
-      b = model.BooleanProperty()
-      p = model.IntegerProperty()
-      q = model.StringProperty()
-      d = model.FloatProperty()
-      k = model.KeyProperty()
-      u = model.UserProperty()
-      xy = model.GeoPtProperty()
-
-    ent = MyModel()
-    k = model.Key(flat=['MyModel', 42])
-    ent.key = k
-    MyModel.b._set_value(ent, True)
-    MyModel.p._set_value(ent, 42)
-    MyModel.q._set_value(ent, 'hello')
-    MyModel.d._set_value(ent, 2.5)
-    MyModel.k._set_value(ent, k)
-    MyModel.u._set_value(ent, TESTUSER)
-    MyModel.xy._set_value(ent, AMSTERDAM)
-    self.assertEqual(MyModel.b._get_value(ent), True)
-    self.assertEqual(MyModel.p._get_value(ent), 42)
-    self.assertEqual(MyModel.q._get_value(ent), 'hello')
-    self.assertEqual(MyModel.d._get_value(ent), 2.5)
-    self.assertEqual(MyModel.k._get_value(ent), k)
-    self.assertEqual(MyModel.u._get_value(ent), TESTUSER)
-    self.assertEqual(MyModel.xy._get_value(ent), AMSTERDAM)
-    pb = self.conn.adapter.entity_to_pb(ent)
-    self.assertEqual(str(pb), INDEXED_PB)
-
-    ent = MyModel._from_pb(pb)
-    self.assertEqual(ent._get_kind(), 'MyModel')
-    k = model.Key(flat=['MyModel', 42])
-    self.assertEqual(ent.key, k)
-    self.assertEqual(MyModel.p._get_value(ent), 42)
-    self.assertEqual(MyModel.q._get_value(ent), 'hello')
-    self.assertEqual(MyModel.d._get_value(ent), 2.5)
-    self.assertEqual(MyModel.k._get_value(ent), k)
-
-  def testDeletingPropertyValue(self):
-    class MyModel(model.Model):
-      a = model.StringProperty()
-    m = MyModel()
-
-    # Initially it isn't there (but the value defaults to None).
-    self.assertEqual(m.a, None)
-    self.assertFalse(MyModel.a._has_value(m))
-
-    # Explicit None assignment makes it present.
-    m.a = None
-    self.assertEqual(m.a, None)
-    self.assertTrue(MyModel.a._has_value(m))
-
-    # Deletion restores the initial state.
-    del m.a
-    self.assertEqual(m.a, None)
-    self.assertFalse(MyModel.a._has_value(m))
-
-    # Redundant deletions are okay.
-    del m.a
-    self.assertEqual(m.a, None)
-    self.assertFalse(MyModel.a._has_value(m))
-
-    # Deleted/missing values are serialized and considered present
-    # when deserialized.
-    pb = m._to_pb()
-    m = MyModel._from_pb(pb)
-    self.assertEqual(m.a, None)
-    self.assertTrue(MyModel.a._has_value(m))
-
-  def testDefaultPropertyValue(self):
-    class MyModel(model.Model):
-      a = model.StringProperty(default='a')
-      b = model.StringProperty(default='')
-    m = MyModel()
-
-    # Initial values equal the defaults.
-    self.assertEqual(m.a, 'a')
-    self.assertEqual(m.b, '')
-    self.assertFalse(MyModel.a._has_value(m))
-    self.assertFalse(MyModel.b._has_value(m))
-
-    # Setting values erases the defaults.
-    m.a = ''
-    m.b = 'b'
-    self.assertEqual(m.a, '')
-    self.assertEqual(m.b, 'b')
-    self.assertTrue(MyModel.a._has_value(m))
-    self.assertTrue(MyModel.b._has_value(m))
-
-    # Deleting values restores the defaults.
-    del m.a
-    del m.b
-    self.assertEqual(m.a, 'a')
-    self.assertEqual(m.b, '')
-    self.assertFalse(MyModel.a._has_value(m))
-    self.assertFalse(MyModel.b._has_value(m))
-
-    # Serialization makes the default values explicit.
-    pb = m._to_pb()
-    m = MyModel._from_pb(pb)
-    self.assertEqual(m.a, 'a')
-    self.assertEqual(m.b, '')
-    self.assertTrue(MyModel.a._has_value(m))
-    self.assertTrue(MyModel.b._has_value(m))
-
-  def testComparingExplicitAndImplicitValue(self):
-    class MyModel(model.Model):
-      a = model.StringProperty(default='a')
-      b = model.StringProperty()
-    m1 = MyModel(b=None)
-    m2 = MyModel()
-    self.assertEqual(m1, m2)
-    m1.a = 'a'
-    self.assertEqual(m1, m2)
-
-  def testRequiredProperty(self):
-    class MyModel(model.Model):
-      a = model.StringProperty(required=True)
-      b = model.StringProperty()  # Never counts as uninitialized
-    self.assertEqual(repr(MyModel.a), "StringProperty('a', required=True)")
-    m = MyModel()
-
-    # Never-assigned values are considered uninitialized.
-    self.assertEqual(m._find_uninitialized(), set(['a']))
-    self.assertRaises(datastore_errors.BadValueError, m._check_initialized)
-    self.assertRaises(datastore_errors.BadValueError, m._to_pb)
-
-    # Empty string is fine.
-    m.a = ''
-    self.assertFalse(m._find_uninitialized())
-    m._check_initialized()
-    m._to_pb()
-
-    # Non-empty string is fine (of course).
-    m.a = 'foo'
-    self.assertFalse(m._find_uninitialized())
-    m._check_initialized()
-    m._to_pb()
-
-    # Deleted value is not fine.
-    del m.a
-    self.assertEqual(m._find_uninitialized(), set(['a']))
-    self.assertRaises(datastore_errors.BadValueError, m._check_initialized)
-    self.assertRaises(datastore_errors.BadValueError, m._to_pb)
-
-    # Explicitly assigned None is *not* fine.
-    m.a = None
-    self.assertEqual(m._find_uninitialized(), set(['a']))
-    self.assertRaises(datastore_errors.BadValueError, m._check_initialized)
-    self.assertRaises(datastore_errors.BadValueError, m._to_pb)
-
-    # Check that b is still unset.
-    self.assertFalse(MyModel.b._has_value(m))
-
-  def testRepeatedRequiredDefaultConflict(self):
-    # Allow at most one of repeated=True, required=True, default=<non-None>.
-    class MyModel(model.Model):
-      self.assertRaises(Exception,
-                        model.StringProperty, repeated=True, default='')
-      self.assertRaises(Exception,
-                        model.StringProperty, repeated=True, required=True)
-      self.assertRaises(Exception,
-                        model.StringProperty, required=True, default='')
-      self.assertRaises(Exception,
-                        model.StringProperty,
-                        repeated=True, required=True, default='')
-    self.assertEqual('MyModel()', repr(MyModel()))
-
-  def testKeyProperty(self):
-    class RefModel(model.Model):
-      pass
-    class FancyModel(model.Model):
-      @classmethod
-      def _get_kind(cls):
-        return 'Fancy'
-    class FancierModel(model.Model):
-      @classmethod
-      def _get_kind(cls):
-        return u'Fancier'
-    class FanciestModel(model.Model):
-      @classmethod
-      def _get_kind(cls):
-        return '\xff'
-    class MyModel(model.Model):
-      basic = model.KeyProperty(kind=None)
-      ref = model.KeyProperty(kind=RefModel)
-      refs = model.KeyProperty(kind=RefModel, repeated=True)
-      fancy = model.KeyProperty(kind=FancyModel)
-      fancee = model.KeyProperty(kind='Fancy')
-      fancier = model.KeyProperty(kind=FancierModel)
-      fanciest = model.KeyProperty(kind=FanciestModel)
-      faanceest = model.KeyProperty(kind=u'\xff')
-    a = MyModel(basic=model.Key('Foo', 1),
-                ref=model.Key(RefModel, 1),
-                refs=[model.Key(RefModel, 2), model.Key(RefModel, 3)],
-                fancy=model.Key(FancyModel, 1),
-                fancee=model.Key(FancyModel, 2),
-                fancier=model.Key('Fancier', 1),
-                fanciest=model.Key(FanciestModel, 1))
-    a.put()
-    b = a.key.get()
-    self.assertEqual(a, b)
-    # Try some assignments.
-    b.basic = model.Key('Bar', 1)
-    b.ref = model.Key(RefModel, 2)
-    b.refs = [model.Key(RefModel, 4)]
-    # Try the repr().
-    self.assertEqual(repr(MyModel.basic), "KeyProperty('basic')")
-    self.assertEqual(repr(MyModel.ref), "KeyProperty('ref', kind='RefModel')")
-    # Try some errors declaring properties.
-    self.assertRaises(TypeError, model.KeyProperty, kind=42)  # Non-class.
-    self.assertRaises(TypeError, model.KeyProperty, kind=int)  # Non-Model.
-    # Try some errors assigning property values.
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, a, 'ref', model.Key('Bar', 1))
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, a, 'refs', [model.Key('Bar', 1)])
-
-  def testKeyPropertyPositionalKind(self):
-    class RefModel(model.Model):
-      pass
-    class MyModel(model.Model):
-      ref0 = model.KeyProperty('REF0')
-      ref1 = model.KeyProperty(RefModel)
-      ref2 = model.KeyProperty(RefModel, 'REF2')
-      ref3 = model.KeyProperty('REF3', RefModel)
-      ref4 = model.KeyProperty(None)
-      ref5 = model.KeyProperty(None, None)
-      ref6 = model.KeyProperty(RefModel, None)
-      ref7 = model.KeyProperty(None, RefModel)
-      ref8 = model.KeyProperty('REF8', None)
-      ref9 = model.KeyProperty(None, 'REF9')
-
-    self.assertEqual(MyModel.ref0._kind, None)
-    self.assertEqual(MyModel.ref1._kind, 'RefModel')
-    self.assertEqual(MyModel.ref2._kind, 'RefModel')
-    self.assertEqual(MyModel.ref3._kind, 'RefModel')
-    self.assertEqual(MyModel.ref4._kind, None)
-    self.assertEqual(MyModel.ref5._kind, None)
-    self.assertEqual(MyModel.ref6._kind, 'RefModel')
-    self.assertEqual(MyModel.ref7._kind, 'RefModel')
-    self.assertEqual(MyModel.ref8._kind, None)
-    self.assertEqual(MyModel.ref9._kind, None)
-
-    self.assertEqual(MyModel.ref0._name, 'REF0')
-    self.assertEqual(MyModel.ref1._name, 'ref1')
-    self.assertEqual(MyModel.ref2._name, 'REF2')
-    self.assertEqual(MyModel.ref3._name, 'REF3')
-    self.assertEqual(MyModel.ref4._name, 'ref4')
-    self.assertEqual(MyModel.ref5._name, 'ref5')
-    self.assertEqual(MyModel.ref6._name, 'ref6')
-    self.assertEqual(MyModel.ref7._name, 'ref7')
-    self.assertEqual(MyModel.ref8._name, 'REF8')
-    self.assertEqual(MyModel.ref9._name, 'REF9')
-
-    for args in [(1,), (int,), (1, int), (int, 1),
-                 ('x', 'y'), (RefModel, RefModel),
-                 (None, int), (int, None), (None, 1), (1, None)]:
-      self.assertRaises(TypeError, model.KeyProperty, *args)
-
-    self.assertRaises(TypeError, model.KeyProperty, RefModel, kind='K')
-    self.assertRaises(TypeError, model.KeyProperty, None, RefModel, kind='k')
-    self.assertRaises(TypeError, model.KeyProperty, 'n', RefModel, kind='k')
-
-  def testPropertyCreationCounter(self):
-    class MyModel(model.Model):
-      foo = model.StringProperty()
-      bar = model.StringProperty()
-      baz = model.StringProperty()
-    self.assertTrue(MyModel.foo._creation_counter <
-                    MyModel.bar._creation_counter <
-                    MyModel.baz._creation_counter)
-
-  def testBlobKeyProperty(self):
-    class MyModel(model.Model):
-      image = model.BlobKeyProperty()
-    test_blobkey = datastore_types.BlobKey('testkey123')
-    m = MyModel()
-    m.image = test_blobkey
-    m.put()
-
-    m = m.key.get()
-
-    self.assertTrue(isinstance(m.image, datastore_types.BlobKey))
-    self.assertEqual(str(m.image), str(test_blobkey))
-
-  def testChoicesProperty(self):
-    class MyModel(model.Model):
-      a = model.StringProperty(choices=['a', 'b', 'c'])
-      b = model.IntegerProperty(choices=[1, 2, 3], repeated=True)
-    m = MyModel(a='a', b=[1, 2])
-    m.a = 'b'
-    m.a = None
-    m.b = [1, 1, 3]
-    m.b = []
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, m, 'a', 'A')
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, m, 'b', [42])
-
-  def testValidatorProperty(self):
-    def my_validator(prop, value):
-      value = value.lower()
-      if not value.startswith('a'):
-        raise datastore_errors.BadValueError('%s does not start with "a"' %
-                                             prop._name)
-      return value
-    class MyModel(model.Model):
-      a = model.StringProperty(validator=my_validator)
-      foos = model.StringProperty(validator=my_validator, repeated=True)
-    m = MyModel()
-    m.a = 'ABC'
-    self.assertEqual(m.a, 'abc')
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, m, 'a', 'def')
-    m.foos = ['ABC', 'ABC', 'ABC']
-    self.assertEqual(m.foos, ['abc', 'abc', 'abc'])
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, m, 'foos', ['def'])
-
-  def testUnindexedProperty(self):
-    class MyModel(model.Model):
-      t = model.TextProperty()
-      b = model.BlobProperty()
-
-    ent = MyModel()
-    MyModel.t._set_value(ent, u'Hello world\u1234')
-    MyModel.b._set_value(ent, '\x00\xff')
-    self.assertEqual(MyModel.t._get_value(ent), u'Hello world\u1234')
-    self.assertEqual(MyModel.b._get_value(ent), '\x00\xff')
+
+# Map index states to human-readable strings.
+_STATE_MAP = {
+  entity_pb.CompositeIndex.ERROR: 'error',
+  entity_pb.CompositeIndex.DELETED: 'deleting',
+  entity_pb.CompositeIndex.READ_WRITE: 'serving',
+  entity_pb.CompositeIndex.WRITE_ONLY: 'building',
+  }
+
+
+class _NotEqualMixin(object):
+  """Mix-in class that implements __ne__ in terms of __eq__."""
+
+  def __ne__(self, other):
+    """Implement self != other as not(self == other)."""
+    eq = self.__eq__(other)
+    if eq is NotImplemented:
+      return NotImplemented
+    return not eq
+
+
+class IndexProperty(_NotEqualMixin):
+  """Immutable object representing a single property in an index."""
+
+  @utils.positional(1)
+  def __new__(cls, name, direction):
+    """Constructor."""
+    obj = object.__new__(cls)
+    obj.__name = name
+    obj.__direction = direction
+    return obj
+
+  @property
+  def name(self):
+    """The property name being indexed, a string."""
+    return self.__name
+
+  @property
+  def direction(self):
+    """The direction in the index for this property, 'asc' or 'desc'."""
+    return self.__direction
+
+  def __repr__(self):
+    """Return a string representation."""
+    return '%s(name=%r, direction=%r)' % (self.__class__.__name__,
+                                          self.name,
+                                          self.direction)
+
+  def __eq__(self, other):
+    """Compare two index properties for equality."""
+    if not isinstance(other, IndexProperty):
+      return NotImplemented
+    return self.name == other.name and self.direction == other.direction
+
+  def __hash__(self):
+    return hash((self.name, self.direction))
+
+
+class Index(_NotEqualMixin):
+  """Immutable object representing an index."""
+
+  @utils.positional(1)
+  def __new__(cls, kind, properties, ancestor):
+    """Constructor."""
+    obj = object.__new__(cls)
+    obj.__kind = kind
+    obj.__properties = properties
+    obj.__ancestor = ancestor
+    return obj
+
+  @property
+  def kind(self):
+    """The kind being indexed, a string."""
+    return self.__kind
+
+  @property
+  def properties(self):
+    """A list of PropertyIndex objects giving the properties being indexed."""
+    return self.__properties
+
+  @property
+  def ancestor(self):
+    """Whether this is an ancestor index, a bool."""
+    return self.__ancestor
+
+  def __repr__(self):
+    """Return a string representation."""
+    parts = []
+    parts.append('kind=%r' % self.kind)
+    parts.append('properties=%r' % self.properties)
+    parts.append('ancestor=%s' % self.ancestor)
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(parts))
+
+  def __eq__(self, other):
+    """Compare two indexes."""
+    if not isinstance(other, Index):
+      return NotImplemented
+    return (self.kind == other.kind and
+            self.properties == other.properties and
+            self.ancestor == other.ancestor)
+
+  def __hash__(self):
+    return hash((self.kind, self.properties, self.ancestor))
+
+
+class IndexState(_NotEqualMixin):
+  """Immutable object representing and index and its state."""
+
+  @utils.positional(1)
+  def __new__(cls, definition, state, id):
+    """Constructor."""
+    obj = object.__new__(cls)
+    obj.__definition = definition
+    obj.__state = state
+    obj.__id = id
+    return obj
+
+  @property
+  def definition(self):
+    """An Index object describing the index."""
+    return self.__definition
+
+  @property
+  def state(self):
+    """The index state, a string.
+
+    Possible values are 'error', 'deleting', 'serving' or 'building'.
+    """
+    return self.__state
+
+  @property
+  def id(self):
+    """The index ID, an integer."""
+    return self.__id
+
+  def __repr__(self):
+    """Return a string representation."""
+    parts = []
+    parts.append('definition=%r' % self.definition)
+    parts.append('state=%r' % self.state)
+    parts.append('id=%d' % self.id)
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(parts))
+
+  def __eq__(self, other):
+    """Compare two index states."""
+    if not isinstance(other, IndexState):
+      return NotImplemented
+    return (self.definition == other.definition and
+            self.state == other.state and
+            self.id == other.id)
+
+  def __hash__(self):
+    return hash((self.definition, self.state, self.id))
+
+
+class ModelAdapter(datastore_rpc.AbstractAdapter):
+  """Conversions between 'our' Key and Model classes and protobufs.
+
+  This is needed to construct a Connection object, which in turn is
+  needed to construct a Context object.
+
+  See the base class docstring for more info about the signatures.
+  """
+
+  def __init__(self, default_model=None):
+    """Constructor.
+
+    Args:
+      default_model: If an implementation for the kind cannot be found, use
+        this model class.  If none is specified, an exception will be thrown
+        (default).
+    """
+    self.default_model = default_model
+    self.want_pbs = 0
+
+  # Make this a context manager to request setting _orig_pb.
+  # Used in query.py by _MultiQuery.run_to_queue().
+
+  def __enter__(self):
+    self.want_pbs += 1
+
+  def __exit__(self, *unused_args):
+    self.want_pbs -= 1
+
+  def pb_to_key(self, pb):
+    return Key(reference=pb)
+
+  def key_to_pb(self, key):
+    return key.reference()
+
+  def pb_to_entity(self, pb):
+    key = None
+    kind = None
+    if pb.key().path().element_size():
+      key = Key(reference=pb.key())
+      kind = key.kind()
+    modelclass = Model._kind_map.get(kind, self.default_model)
+    if modelclass is None:
+      raise KindError(
+        "No model class found for kind '%s'. Did you forget to import it?" %
+        kind)
+    entity = modelclass._from_pb(pb, key=key, set_key=False)
+    if self.want_pbs:
+      entity._orig_pb = pb
+    return entity
+
+  def entity_to_pb(self, ent):
     pb = ent._to_pb()
-    self.assertEqual(str(pb), UNINDEXED_PB)
+    return pb
 
-    ent = MyModel._from_pb(pb)
-    self.assertEqual(ent._get_kind(), 'MyModel')
-    k = model.Key(flat=['MyModel', None])
-    self.assertEqual(ent.key, k)
-    self.assertEqual(MyModel.t._get_value(ent), u'Hello world\u1234')
-    self.assertEqual(MyModel.b._get_value(ent), '\x00\xff')
+  def pb_to_index(self, pb):
+    index_def = pb.definition()
+    properties = [IndexProperty(name=prop.name(),
+                                direction=_DIR_MAP[prop.direction()])
+                  for prop in index_def.property_list()]
+    index = Index(kind=index_def.entity_type(),
+                  properties=properties,
+                  ancestor=bool(index_def.ancestor()),
+                  )
+    index_state = IndexState(definition=index,
+                             state=_STATE_MAP[pb.state()],
+                             id=pb.id(),
+                             )
+    return index_state
 
-  def testUserPropertyAutoFlags(self):
-    # Can't combind auto_current_user* with repeated.
-    self.assertRaises(ValueError, model.UserProperty,
-                      repeated=True, auto_current_user_add=True)
-    self.assertRaises(ValueError, model.UserProperty,
-                      repeated=True, auto_current_user=True)
 
-    # Define a model with user properties.
-    class MyModel(model.Model):
-      u0 = model.UserProperty(auto_current_user_add=True)
-      u1 = model.UserProperty(auto_current_user=True)
+def make_connection(config=None, default_model=None):
+  """Create a new Connection object with the right adapter.
 
-    # Without a current user, these remain None.
-    x = MyModel()
-    k = x.put()
-    y = k.get()
-    self.assertTrue(y.u0 is None)
-    self.assertTrue(y.u1 is None)
+  Optionally you can pass in a datastore_rpc.Configuration object.
+  """
+  return datastore_rpc.Connection(
+      adapter=ModelAdapter(default_model),
+      config=config)
 
+
+class ModelAttribute(object):
+  """A Base class signifying the presence of a _fix_up() method."""
+
+  def _fix_up(self, cls, code_name):
+    pass
+
+
+class _BaseValue(_NotEqualMixin):
+  """A marker object wrapping a 'base type' value.
+
+  This is used to be able to tell whether ent._values[name] is a
+  user value (i.e. of a type that the Python code understands) or a
+  base value (i.e of a type that serialization understands).
+  User values are unwrapped; base values are wrapped in a
+  _BaseValue instance.
+  """
+
+  __slots__ = ['b_val']
+
+  def __init__(self, b_val):
+    """Constructor.  Argument is the base value to be wrapped."""
+    assert b_val is not None
+    assert not isinstance(b_val, list), repr(b_val)
+    self.b_val = b_val
+
+  def __repr__(self):
+    return '_BaseValue(%r)' % (self.b_val,)
+
+  def __eq__(self, other):
+    if not isinstance(other, _BaseValue):
+      return NotImplemented
+    return self.b_val == other.b_val
+
+  def __hash__(self):
+    raise TypeError('_BaseValue is not immutable')
+
+
+class Property(ModelAttribute):
+  """A class describing a typed, persisted attribute of a datastore entity.
+
+  Not to be confused with Python's 'property' built-in.
+
+  This is just a base class; there are specific subclasses that
+  describe Properties of various types (and GenericProperty which
+  describes a dynamically typed Property).
+
+  All special Property attributes, even those considered 'public',
+  have names starting with an underscore, because StructuredProperty
+  uses the non-underscore attribute namespace to refer to nested
+  Property names; this is essential for specifying queries on
+  subproperties (see the module docstring).
+
+  The Property class and its predefined subclasses allow easy
+  subclassing using composable (or stackable) validation and
+  conversion APIs.  These require some terminology definitions:
+
+  - A 'user value' is a value such as would be set and accessed by the
+    application code using standard attributes on the entity.
+
+  - A 'base value' is a value such as would be serialized to
+    and deserialized from the datastore.
+
+  The values stored in ent._values[name] and accessed by
+  _store_value() and _retrieve_value() can be either user values or
+  base values.  To retrieve user values, use
+  _get_user_value().  To retrieve base values, use
+  _get_base_value().  In particular, _get_value() calls
+  _get_user_value(), and _serialize() effectively calls
+  _get_base_value().
+
+  To store a user value, just call _store_value().  To store a
+  base value, wrap the value in a _BaseValue() and then
+  call _store_value().
+
+  A Property subclass that wants to implement a specific
+  transformation between user values and serialiazble values should
+  implement two methods, _to_base_type() and _from_base_type().
+  These should *NOT* call their super() method; super calls are taken
+  care of by _call_to_base_type() and _call_from_base_type().
+  This is what is meant by composable (or stackable) APIs.
+
+  The API supports 'stacking' classes with ever more sophisticated
+  user<-->base conversions: the user-->base conversion
+  goes from more sophisticated to less sophisticated, while the
+  base-->user conversion goes from less sophisticated to more
+  sophisticated.  For example, see the relationship between
+  BlobProperty, TextProperty and StringProperty.
+
+  In addition to _to_base_type() and _from_base_type(), the
+  _validate() method is also a composable API.
+
+  The validation API distinguishes between 'lax' and 'strict' user
+  values.  The set of lax values is a superset of the set of strict
+  values.  The _validate() method takes a lax value and if necessary
+  converts it to a strict value.  This means that when setting the
+  property value, lax values are accepted, while when getting the
+  property value, only strict values will be returned.  If no
+  conversion is needed, _validate() may return None.  If the argument
+  is outside the set of accepted lax values, _validate() should raise
+  an exception, preferably TypeError or
+  datastore_errors.BadValueError.
+
+  Example/boilerplate:
+
+  def _validate(self, value):
+    'Lax user value to strict user value.'
+    if not isinstance(value, <top type>):
+      raise TypeError(...)  # Or datastore_errors.BadValueError(...).
+
+  def _to_base_type(self, value):
+    '(Strict) user value to base value.'
+    if isinstance(value, <user type>):
+      return <base type>(value)
+
+  def _from_base_type(self, value):
+    'base value to (strict) user value.'
+    if not isinstance(value, <base type>):
+      return <user type>(value)
+
+  Things that _validate(), _to_base_type() and _from_base_type()
+  do *not* need to handle:
+
+  - None: They will not be called with None (and if they return None,
+    this means that the value does not need conversion).
+
+  - Repeated values: The infrastructure (_get_user_value() and
+    _get_base_value()) takes care of calling
+    _from_base_type() or _to_base_type() for each list item in a
+    repeated value.
+
+  - Wrapping values in _BaseValue(): The wrapping and unwrapping is
+    taken care of by the infrastructure that calls the composable APIs.
+
+  - Comparisons: The comparison operations call _to_base_type() on
+    their operand.
+
+  - Distinguishing between user and base values: the
+    infrastructure guarantees that _from_base_type() will be called
+    with an (unwrapped) base value, and that
+    _to_base_type() will be called with a user value.
+
+  - Returning the original value: if any of these return None, the
+    original value is kept.  (Returning a differen value not equal to
+    None will substitute the different value.)
+  """
+
+  # TODO: Separate 'simple' properties from base Property class
+
+  _code_name = None
+  _name = None
+  _indexed = True
+  _repeated = False
+  _required = False
+  _default = None
+  _choices = None
+  _validator = None
+  _verbose_name = None
+
+  __creation_counter_global = 0
+
+  _attributes = ['_name', '_indexed', '_repeated', '_required', '_default',
+                 '_choices', '_validator', '_verbose_name']
+  _positional = 1  # Only name is a positional argument.
+
+  @utils.positional(1 + _positional)  # Add 1 for self.
+  def __init__(self, name=None, indexed=None, repeated=None,
+               required=None, default=None, choices=None, validator=None,
+               verbose_name=None):
+    """Constructor.  For arguments see the module docstring."""
+    if name is not None:
+      if isinstance(name, unicode):
+        name = name.encode('utf-8')
+      if not isinstance(name, str):
+        raise TypeError('Name %r is not a string' % (name,))
+      if '.' in name:
+        raise ValueError('Name %r cannot contain period characters' % (name,))
+      self._name = name
+    if indexed is not None:
+      self._indexed = indexed
+    if repeated is not None:
+      self._repeated = repeated
+    if required is not None:
+      self._required = required
+    if default is not None:
+      # TODO: Call _validate() on default?
+      self._default = default
+    if verbose_name is not None:
+      self._verbose_name = verbose_name
+    if (bool(self._repeated) +
+        bool(self._required) +
+        (self._default is not None)) > 1:
+      raise ValueError('repeated, required and default are mutally exclusive.')
+    if choices is not None:
+      if not isinstance(choices, (list, tuple, set, frozenset)):
+        raise TypeError('choices must be a list, tuple or set; received %r' %
+                        choices)
+      # TODO: Call _validate() on each choice?
+      self._choices = frozenset(choices)
+    if validator is not None:
+      # The validator is called as follows:
+      #   value = validator(prop, value)
+      # It should return the value to be used, or raise an exception.
+      # It should be idempotent, i.e. calling it a second time should
+      # not further modify the value.  So a validator that returns e.g.
+      # value.lower() or value.strip() is fine, but one that returns
+      # value + '$' is not.
+      if not hasattr(validator, '__call__'):
+        raise TypeError('validator must be callable or None; received %r' %
+                        validator)
+      self._validator = validator
+    # Keep a unique creation counter.
+    Property.__creation_counter_global += 1
+    self._creation_counter = Property.__creation_counter_global
+
+  def __repr__(self):
+    """Return a compact unambiguous string representation of a property."""
+    args = []
+    cls = self.__class__
+    for i, attr in enumerate(self._attributes):
+      val = getattr(self, attr)
+      if val is not getattr(cls, attr):
+        if isinstance(val, type):
+          s = val.__name__
+        else:
+          s = repr(val)
+        if i >= cls._positional:
+          if attr.startswith('_'):
+            attr = attr[1:]
+          s = '%s=%s' % (attr, s)
+        args.append(s)
+    s = '%s(%s)' % (self.__class__.__name__, ', '.join(args))
+    return s
+
+  def _datastore_type(self, value):
+    """Internal hook used by property filters.
+
+    Sometimes the low-level query interface needs a specific data type
+    in order for the right filter to be constructed.  See _comparison().
+    """
+    return value
+
+  def _comparison(self, op, value):
+    """Internal helper for comparison operators.
+
+    Args:
+      op: The operator ('=', '<' etc.).
+
+    Returns:
+      A FilterNode instance representing the requested comparison.
+    """
+    # NOTE: This is also used by query.gql().
+    if not self._indexed:
+      raise datastore_errors.BadFilterError(
+        'Cannot query for unindexed property %s' % self._name)
+    from .query import FilterNode  # Import late to avoid circular imports.
+    if value is not None:
+      value = self._do_validate(value)
+      value = self._call_to_base_type(value)
+      value = self._datastore_type(value)
+    return FilterNode(self._name, op, value)
+
+  # Comparison operators on Property instances don't compare the
+  # properties; instead they return FilterNode instances that can be
+  # used in queries.  See the module docstrings above and in query.py
+  # for details on how these can be used.
+
+  def __eq__(self, value):
+    """Return a FilterNode instance representing the '=' comparison."""
+    return self._comparison('=', value)
+
+  def __ne__(self, value):
+    """Return a FilterNode instance representing the '!=' comparison."""
+    return self._comparison('!=', value)
+
+  def __lt__(self, value):
+    """Return a FilterNode instance representing the '<' comparison."""
+    return self._comparison('<', value)
+
+  def __le__(self, value):
+    """Return a FilterNode instance representing the '<=' comparison."""
+    return self._comparison('<=', value)
+
+  def __gt__(self, value):
+    """Return a FilterNode instance representing the '>' comparison."""
+    return self._comparison('>', value)
+
+  def __ge__(self, value):
+    """Return a FilterNode instance representing the '>=' comparison."""
+    return self._comparison('>=', value)
+
+  def _IN(self, value):
+    """Comparison operator for the 'in' comparison operator.
+
+    The Python 'in' operator cannot be overloaded in the way we want
+    to, so we define a method.  For example:
+
+      Employee.query(Employee.rank.IN([4, 5, 6]))
+
+    Note that the method is called ._IN() but may normally be invoked
+    as .IN(); ._IN() is provided for the case you have a
+    StructuredProperty with a model that has a Property named IN.
+    """
+    if not self._indexed:
+      raise datastore_errors.BadFilterError(
+        'Cannot query for unindexed property %s' % self._name)
+    from .query import FilterNode  # Import late to avoid circular imports.
+    if not isinstance(value, (list, tuple, set, frozenset)):
+      raise datastore_errors.BadArgumentError(
+        'Expected list, tuple or set, got %r' % (value,))
+    values = []
+    for val in value:
+      if val is not None:
+        val = self._do_validate(val)
+        val = self._call_to_base_type(val)
+        val = self._datastore_type(val)
+      values.append(val)
+    return FilterNode(self._name, 'in', values)
+  IN = _IN
+
+  def __neg__(self):
+    """Return a descending sort order on this Property.
+
+    For example:
+
+      Employee.query().order(-Employee.rank)
+    """
+    return datastore_query.PropertyOrder(
+      self._name, datastore_query.PropertyOrder.DESCENDING)
+
+  def __pos__(self):
+    """Return an ascending sort order on this Property.
+
+    Note that this is redundant but provided for consistency with
+    __neg__.  For example, the following two are equivalent:
+
+      Employee.query().order(+Employee.rank)
+      Employee.query().order(Employee.rank)
+    """
+    return datastore_query.PropertyOrder(self._name)
+
+  def _do_validate(self, value):
+    """Call all validations on the value.
+
+    This calls the most derived _validate() method(s), then the custom
+    validator function, and then checks the choices.  It returns the
+    value, possibly modified in an idempotent way, or raises an
+    exception.
+
+    Note that this does not call all composable _validate() methods.
+    It only calls _validate() methods up to but not including the
+    first _to_base_type() method, when the MRO is traversed looking
+    for _validate() and _to_base_type() methods.  (IOW if a class
+    defines both _validate() and _to_base_type(), its _validate()
+    is called and then the search is aborted.)
+
+    Note that for a repeated Property this function should be called
+    for each item in the list, not for the list as a whole.
+    """
+    if isinstance(value, _BaseValue):
+      return value
+    value = self._call_shallow_validation(value)
+    if self._validator is not None:
+      newvalue = self._validator(self, value)
+      if newvalue is not None:
+        value = newvalue
+    if self._choices is not None:
+      if value not in self._choices:
+        raise datastore_errors.BadValueError(
+          'Value %r for property %s is not an allowed choice' %
+          (value, self._name))
+    return value
+
+  def _fix_up(self, cls, code_name):
+    """Internal helper called to tell the property its name.
+
+    This is called by _fix_up_properties() which is called by
+    MetaModel when finishing the construction of a Model subclass.
+    The name passed in is the name of the class attribute to which the
+    Property is assigned (a.k.a. the code name).  Note that this means
+    that each Property instance must be assigned to (at most) one
+    class attribute.  E.g. to declare three strings, you must call
+    StringProperty() three times, you cannot write
+
+      foo = bar = baz = StringProperty()
+    """
+    self._code_name = code_name
+    if self._name is None:
+      self._name = code_name
+
+  def _store_value(self, entity, value):
+    """Internal helper to store a value in an entity for a Property.
+
+    This assumes validation has already taken place.  For a repeated
+    Property the value should be a list.
+    """
+    entity._values[self._name] = value
+
+  def _set_value(self, entity, value):
+    """Internal helper to set a value in an entity for a Property.
+
+    This performs validation first.  For a repeated Property the value
+    should be a list.
+    """
+    if entity._projection:
+      raise ReadonlyPropertyError(
+        'You cannot set property values of a projection entity')
+    if self._repeated:
+      if not isinstance(value, (list, tuple, set, frozenset)):
+        raise datastore_errors.BadValueError('Expected list or tuple, got %r' %
+                                             (value,))
+      value = [self._do_validate(v) for v in value]
+    else:
+      if value is not None:
+        value = self._do_validate(value)
+    self._store_value(entity, value)
+
+  def _has_value(self, entity, unused_rest=None):
+    """Internal helper to ask if the entity has a value for this Property."""
+    return self._name in entity._values
+
+  def _retrieve_value(self, entity, default=None):
+    """Internal helper to retrieve the value for this Property from an entity.
+
+    This returns None if no value is set, or the default argument if
+    given.  For a repeated Property this returns a list if a value is
+    set, otherwise None.  No additional transformations are applied.
+    """
+    return entity._values.get(self._name, default)
+
+  def _get_user_value(self, entity):
+    """Return the user value for this property of the given entity.
+
+    This implies removing the _BaseValue() wrapper if present, and
+    if it is, calling all _from_base_type() methods, in the reverse
+    method resolution order of the property's class.  It also handles
+    default values and repeated properties.
+    """
+    return self._apply_to_values(entity, self._opt_call_from_base_type)
+
+  def _get_base_value(self, entity):
+    """Return the base value for this property of the given entity.
+
+    This implies calling all _to_base_type() methods, in the method
+    resolution order of the property's class, and adding a
+    _BaseValue() wrapper, if one is not already present.  (If one
+    is present, no work is done.)  It also handles default values and
+    repeated properties.
+    """
+    return self._apply_to_values(entity, self._opt_call_to_base_type)
+
+  # TODO: Invent a shorter name for this.
+  def _get_base_value_unwrapped_as_list(self, entity):
+    """Like _get_base_value(), but always returns a list.
+
+    Returns:
+      A new list of unwrapped base values.  For an unrepeated
+      property, if the value is missing or None, returns [None]; for a
+      repeated property, if the original value is missing or None or
+      empty, returns [].
+    """
+    wrapped = self._get_base_value(entity)
+    if self._repeated:
+      if wrapped is None:
+        return []
+      assert isinstance(wrapped, list)
+      return [w.b_val for w in wrapped]
+    else:
+      if wrapped is None:
+        return [None]
+      assert isinstance(wrapped, _BaseValue)
+      return [wrapped.b_val]
+
+  def _opt_call_from_base_type(self, value):
+    """Call _from_base_type() if necessary.
+
+    If the value is a _BaseValue instance, unwrap it and call all
+    _from_base_type() methods.  Otherwise, return the value
+    unchanged.
+    """
+    if isinstance(value, _BaseValue):
+      value = self._call_from_base_type(value.b_val)
+    return value
+
+  def _value_to_repr(self, value):
+    """Turn a value (base or not) into its repr().
+
+    This exists so that property classes can override it separately.
+    """
+    # Manually apply _from_base_type() so as not to have a side
+    # effect on what's contained in the entity.  Printing a value
+    # should not change it!
+    val = self._opt_call_from_base_type(value)
+    return repr(val)
+
+  def _opt_call_to_base_type(self, value):
+    """Call _to_base_type() if necessary.
+
+    If the value is a _BaseValue instance, return it unchanged.
+    Otherwise, call all _validate() and _to_base_type() methods and
+    wrap it in a _BaseValue instance.
+    """
+    if not isinstance(value, _BaseValue):
+      value = _BaseValue(self._call_to_base_type(value))
+    return value
+
+  def _call_from_base_type(self, value):
+    """Call all _from_base_type() methods on the value.
+
+    This calls the methods in the reverse method resolution order of
+    the property's class.
+    """
+    methods = self._find_methods('_from_base_type', reverse=True)
+    call = self._apply_list(methods)
+    return call(value)
+
+  def _call_to_base_type(self, value):
+    """Call all _validate() and _to_base_type() methods on the value.
+
+    This calls the methods in the method resolution order of the
+    property's class.
+    """
+    methods = self._find_methods('_validate', '_to_base_type')
+    call = self._apply_list(methods)
+    return call(value)
+
+  def _call_shallow_validation(self, value):
+    """Call the initial set of _validate() methods.
+
+    This is similar to _call_to_base_type() except it only calls
+    those _validate() methods that can be called without needing to
+    call _to_base_type().
+
+    An example: suppose the class hierarchy is A -> B -> C ->
+    Property, and suppose A defines _validate() only, but B and C
+    define _validate() and _to_base_type().  The full list of
+    methods called by _call_to_base_type() is:
+
+      A._validate()
+      B._validate()
+      B._to_base_type()
+      C._validate()
+      C._to_base_type()
+
+    This method will call A._validate() and B._validate() but not the
+    others.
+    """
+    methods = []
+    for method in self._find_methods('_validate', '_to_base_type'):
+      if method.__name__ != '_validate':
+        break
+      methods.append(method)
+    call = self._apply_list(methods)
+    return call(value)
+
+  @classmethod
+  def _find_methods(cls, *names, **kwds):
+    """Compute a list of composable methods.
+
+    Because this is a common operation and the class hierarchy is
+    static, the outcome is cached (assuming that for a particular list
+    of names the reversed flag is either always on, or always off).
+
+    Args:
+      *names: One or more method names.
+      reverse: Optional flag, default False; if True, the list is
+        reversed.
+
+    Returns:
+      A list of callable class method objects.
+    """
+    reverse = kwds.pop('reverse', False)
+    assert not kwds, repr(kwds)
+    cache = cls.__dict__.get('_find_methods_cache')
+    if cache:
+      hit = cache.get(names)
+      if hit is not None:
+        return hit
+    else:
+      cls._find_methods_cache = cache = {}
+    methods = []
+    for c in cls.__mro__:
+      for name in names:
+        method = c.__dict__.get(name)
+        if method is not None:
+          methods.append(method)
+    if reverse:
+      methods.reverse()
+    cache[names] = methods
+    return methods
+
+  def _apply_list(self, methods):
+    """Return a single callable that applies a list of methods to a value.
+
+    If a method returns None, the last value is kept; if it returns
+    some other value, that replaces the last value.  Exceptions are
+    not caught.
+    """
+    def call(value):
+      for method in methods:
+        newvalue = method(self, value)
+        if newvalue is not None:
+          value = newvalue
+      return value
+    return call
+
+  def _apply_to_values(self, entity, function):
+    """Apply a function to the property value/values of a given entity.
+
+    This retrieves the property value, applies the function, and then
+    stores the value back.  For a repeated property, the function is
+    applied separately to each of the values in the list.  The
+    resulting value or list of values is both stored back in the
+    entity and returned from this method.
+    """
+    value = self._retrieve_value(entity, self._default)
+    if self._repeated:
+      if value is None:
+        value = []
+        self._store_value(entity, value)
+      else:
+        value[:] = map(function, value)
+    else:
+      if value is not None:
+        newvalue = function(value)
+        if newvalue is not None and newvalue is not value:
+          self._store_value(entity, newvalue)
+          value = newvalue
+    return value
+
+  def _get_value(self, entity):
+    """Internal helper to get the value for this Property from an entity.
+
+    For a repeated Property this initializes the value to an empty
+    list if it is not set.
+    """
+    if entity._projection:
+      if self._name not in entity._projection:
+        raise UnprojectedPropertyError(
+          'Property %s is not in the projection' % (self._name,))
+    return self._get_user_value(entity)
+
+  def _delete_value(self, entity):
+    """Internal helper to delete the value for this Property from an entity.
+
+    Note that if no value exists this is a no-op; deleted values will
+    not be serialized but requesting their value will return None (or
+    an empty list in the case of a repeated Property).
+    """
+    if self._name in entity._values:
+      del entity._values[self._name]
+
+  def _is_initialized(self, entity):
+    """Internal helper to ask if the entity has a value for this Property.
+
+    This returns False if a value is stored but it is None.
+    """
+    return not self._required or (self._has_value(entity) and
+                                  self._get_value(entity) is not None)
+
+  def __get__(self, entity, unused_cls=None):
+    """Descriptor protocol: get the value from the entity."""
+    if entity is None:
+      return self  # __get__ called on class
+    return self._get_value(entity)
+
+  def __set__(self, entity, value):
+    """Descriptor protocol: set the value on the entity."""
+    self._set_value(entity, value)
+
+  def __delete__(self, entity):
+    """Descriptor protocol: delete the value from the entity."""
+    self._delete_value(entity)
+
+  def _serialize(self, entity, pb, prefix='', parent_repeated=False):
+    """Internal helper to serialize this property to a protocol buffer.
+
+    Subclasses may override this method.
+
+    Args:
+      entity: The entity, a Model (subclass) instance.
+      pb: The protocol buffer, an EntityProto instance.
+      prefix: Optional name prefix used for StructuredProperty
+        (if present, must end in '.').
+      parent_repeated: True if the parent (or an earlier ancestor)
+        is a repeated Property.
+    """
+    values = self._get_base_value_unwrapped_as_list(entity)
+    for val in values:
+      if self._indexed:
+        p = pb.add_property()
+      else:
+        p = pb.add_raw_property()
+      p.set_name(prefix + self._name)
+      p.set_multiple(self._repeated or parent_repeated)
+      v = p.mutable_value()
+      if val is not None:
+        self._db_set_value(v, p, val)
+
+  def _deserialize(self, entity, p, unused_depth=1):
+    """Internal helper to deserialize this property from a protocol buffer.
+
+    Subclasses may override this method.
+
+    Args:
+      entity: The entity, a Model (subclass) instance.
+      p: A Property Message object (a protocol buffer).
+      depth: Optional nesting depth, default 1 (unused here, but used
+        by some subclasses that override this method).
+    """
+    v = p.value()
+    val = self._db_get_value(v, p)
+    if val is not None:
+      val = _BaseValue(val)
+    if self._repeated:
+      if self._has_value(entity):
+        value = self._retrieve_value(entity)
+        assert isinstance(value, list), repr(value)
+        value.append(val)
+      else:
+        value = [val]
+    else:
+      value = val
+    self._store_value(entity, value)
+
+  def _prepare_for_put(self, entity):
+    pass
+
+  def _check_indexed_property(self, rest=None):
+    """Helper to check whether this property is indexed.
+
+    Args:
+      rest: Optional subproperty to check, of the form 'name1.name2...nameN'.
+
+    Raises:
+      InvalidPropertyError if this property is not indexed or if a
+      subproperty is specified.  (StructuredProperty overrides this
+      method to handle subprpoperties.)
+    """
+    if not self._indexed:
+      raise InvalidPropertyError('Projecting on unindexed property %s' %
+                                 self._name)
+    if rest:
+      raise InvalidPropertyError('Projecting on subproperty %s.%s '
+                                 'but %s is not a structured property' %
+                                 (self._name, rest, self._name))
+
+  def _get_for_dict(self, entity):
+    """Retrieve the value like _get_value(), processed for _to_dict().
+
+    Property subclasses can override this if they want the dictionary
+    returned by entity._to_dict() to contain a different value.  The
+    main use case is StructuredProperty and LocalStructuredProperty.
+
+    NOTES:
+
+    - If you override _get_for_dict() to return a different type, you
+      must override _validate() to accept values of that type and
+      convert them back to the original type.
+
+    - If you override _get_for_dict(), you must handle repeated values
+      and None correctly.  (See _StructuredGetForDictMixin for an
+      example.)  However, _validate() does not need to handle these.
+    """
+    return self._get_value(entity)
+
+
+def _validate_key(value, entity=None):
+  if not isinstance(value, Key):
+    # TODO: BadKeyError.
+    raise datastore_errors.BadValueError('Expected Key, got %r' % value)
+  if entity and entity.__class__ not in (Model, Expando):
+    if value.kind() != entity._get_kind():
+      raise KindError('Expected Key kind to be %s; received %s' %
+                      (entity._get_kind(), value.kind()))
+  return value
+
+
+class ModelKey(Property):
+  """Special property to store the Model key."""
+
+  def __init__(self):
+    super(ModelKey, self).__init__()
+    self._name = '__key__'
+
+  def _datastore_type(self, value):
+    return datastore_types.Key(value.urlsafe())
+
+  def _comparison(self, op, value):
+    if value is not None:
+      return super(ModelKey, self)._comparison(op, value)
+    raise datastore_errors.BadValueError(
+        "__key__ filter query can't be compared to None")
+
+  # TODO: Support IN().
+
+  def _validate(self, value):
+    return _validate_key(value)
+
+  def _set_value(self, entity, value):
+    """Setter for key attribute."""
+    if value is not None:
+      value = _validate_key(value, entity=entity)
+      value = entity._validate_key(value)
+    entity._entity_key = value
+
+  def _get_value(self, entity):
+    """Getter for key attribute."""
+    return entity._entity_key
+
+  def _delete_value(self, entity):
+    """Deleter for key attribute."""
+    entity._entity_key = None
+
+
+class BooleanProperty(Property):
+  """A Property whose value is a Python bool."""
+  # TODO: Allow int/long values equal to 0 or 1?
+
+  def _validate(self, value):
+    if not isinstance(value, bool):
+      raise datastore_errors.BadValueError('Expected bool, got %r' %
+                                           (value,))
+    return value
+
+  def _db_set_value(self, v, unused_p, value):
+    if not isinstance(value, bool):
+      raise TypeError('BooleanProperty %s can only be set to bool values; '
+                      'received %r' % (self._name, value))
+    v.set_booleanvalue(value)
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_booleanvalue():
+      return None
+    # The booleanvalue field is an int32, so booleanvalue() returns an
+    # int, hence the conversion.
+    return bool(v.booleanvalue())
+
+
+class IntegerProperty(Property):
+  """A Property whose value is a Python int or long (or bool)."""
+
+  def _validate(self, value):
+    if not isinstance(value, (int, long)):
+      raise datastore_errors.BadValueError('Expected integer, got %r' %
+                                           (value,))
+    return int(value)
+
+  def _db_set_value(self, v, unused_p, value):
+    if not isinstance(value, (bool, int, long)):
+      raise TypeError('IntegerProperty %s can only be set to integer values; '
+                      'received %r' % (self._name, value))
+    v.set_int64value(value)
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_int64value():
+      return None
+    return int(v.int64value())
+
+
+class FloatProperty(Property):
+  """A Property whose value is a Python float.
+
+  Note: int, long and bool are also allowed.
+  """
+
+  def _validate(self, value):
+    if not isinstance(value, (int, long, float)):
+      raise datastore_errors.BadValueError('Expected float, got %r' %
+                                           (value,))
+    return float(value)
+
+  def _db_set_value(self, v, unused_p, value):
+    if not isinstance(value, (bool, int, long, float)):
+      raise TypeError('FloatProperty %s can only be set to integer or float '
+                      'values; received %r' % (self._name, value))
+    v.set_doublevalue(float(value))
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_doublevalue():
+      return None
+    return v.doublevalue()
+
+
+# A custom 'meaning' for compressed properties.
+_MEANING_URI_COMPRESSED = 'ZLIB'
+
+
+class _CompressedValue(_NotEqualMixin):
+  """A marker object wrapping compressed values."""
+
+  __slots__ = ['z_val']
+
+  def __init__(self, z_val):
+    """Constructor.  Argument is a string returned by zlib.compress()."""
+    assert isinstance(z_val, str), repr(z_val)
+    self.z_val = z_val
+
+  def __repr__(self):
+    return '_CompressedValue(%s)' % repr(self.z_val)
+
+  def __eq__(self, other):
+    if not isinstance(other, _CompressedValue):
+      return NotImplemented
+    return self.z_val == other.z_val
+
+  def __hash__(self):
+    raise TypeError('_CompressedValue is not immutable')
+
+
+class BlobProperty(Property):
+  """A Property whose value is a byte string.  It may be compressed."""
+
+  _indexed = False
+  _compressed = False
+
+  _attributes = Property._attributes + ['_compressed']
+
+  @utils.positional(1 + Property._positional)
+  def __init__(self, name=None, compressed=False, **kwds):
+    super(BlobProperty, self).__init__(name=name, **kwds)
+    self._compressed = compressed
+    if compressed and self._indexed:
+      # TODO: Allow this, but only allow == and IN comparisons?
+      raise NotImplementedError('BlobProperty %s cannot be compressed and '
+                                'indexed at the same time.' % self._name)
+
+  def _value_to_repr(self, value):
+    long_repr = super(BlobProperty, self)._value_to_repr(value)
+    # Note that we may truncate even if the value is shorter than
+    # _MAX_STRING_LENGTH; e.g. if it contains many \xXX or \uUUUU
+    # escapes.
+    if len(long_repr) > _MAX_STRING_LENGTH + 4:
+      # Truncate, assuming the final character is the closing quote.
+      long_repr = long_repr[:_MAX_STRING_LENGTH] + '...' + long_repr[-1]
+    return long_repr
+
+  def _validate(self, value):
+    if not isinstance(value, str):
+      raise datastore_errors.BadValueError('Expected str, got %r' %
+                                           (value,))
+    if (self._indexed and
+        not isinstance(self, TextProperty) and
+        len(value) > _MAX_STRING_LENGTH):
+      raise datastore_errors.BadValueError(
+        'Indexed value %s must be at most %d bytes' %
+        (self._name, _MAX_STRING_LENGTH))
+
+  def _to_base_type(self, value):
+    if self._compressed:
+      return _CompressedValue(zlib.compress(value))
+
+  def _from_base_type(self, value):
+    if isinstance(value, _CompressedValue):
+      return zlib.decompress(value.z_val)
+
+  def _datastore_type(self, value):
+    # Since this is only used for queries, and queries imply an
+    # indexed property, always use ByteString.
+    return datastore_types.ByteString(value)
+
+  def _db_set_value(self, v, p, value):
+    if isinstance(value, _CompressedValue):
+      self._db_set_compressed_meaning(p)
+      value = value.z_val
+    else:
+      self._db_set_uncompressed_meaning(p)
+    v.set_stringvalue(value)
+
+  def _db_set_compressed_meaning(self, p):
+    # Use meaning_uri because setting meaning to something else that is not
+    # BLOB or BYTESTRING will cause the value to be decoded from utf-8 in
+    # datastore_types.FromPropertyPb. That would break the compressed string.
+    p.set_meaning_uri(_MEANING_URI_COMPRESSED)
+    p.set_meaning(entity_pb.Property.BLOB)
+
+  def _db_set_uncompressed_meaning(self, p):
+    if self._indexed:
+      p.set_meaning(entity_pb.Property.BYTESTRING)
+    else:
+      p.set_meaning(entity_pb.Property.BLOB)
+
+  def _db_get_value(self, v, p):
+    if not v.has_stringvalue():
+      return None
+    value = v.stringvalue()
+    if p.meaning_uri() == _MEANING_URI_COMPRESSED:
+      value = _CompressedValue(value)
+    return value
+
+
+class TextProperty(BlobProperty):
+  """An unindexed Property whose value is a text string of unlimited length."""
+
+  def _validate(self, value):
+    if isinstance(value, str):
+      # Decode from UTF-8 -- if this fails, we can't write it.
+      try:
+        value = unicode(value, 'utf-8')
+      except UnicodeError:
+        raise datastore_errors.BadValueError('Expected valid UTF-8, got %r' %
+                                             (value,))
+    elif not isinstance(value, unicode):
+      raise datastore_errors.BadValueError('Expected string, got %r' %
+                                           (value,))
+    if self._indexed and len(value) > _MAX_STRING_LENGTH:
+      raise datastore_errors.BadValueError(
+        'Indexed value %s must be at most %d characters' %
+        (self._name, _MAX_STRING_LENGTH))
+
+  def _to_base_type(self, value):
+    if isinstance(value, unicode):
+      return value.encode('utf-8')
+
+  def _from_base_type(self, value):
+    if isinstance(value, str):
+      try:
+        return unicode(value, 'utf-8')
+      except UnicodeDecodeError:
+        # Since older versions of NDB could write non-UTF-8 TEXT
+        # properties, we can't just reject these.  But _validate() now
+        # rejects these, so you can't write new non-UTF-8 TEXT
+        # properties.
+        # TODO: Eventually we should close this hole.
+        pass
+
+  def _db_set_uncompressed_meaning(self, p):
+    if not self._indexed:
+      p.set_meaning(entity_pb.Property.TEXT)
+
+
+class StringProperty(TextProperty):
+  """An indexed Property whose value is a text string of limited length."""
+
+  _indexed = True
+
+
+class GeoPtProperty(Property):
+  """A Property whose value is a GeoPt."""
+
+  def _validate(self, value):
+    if not isinstance(value, GeoPt):
+      raise datastore_errors.BadValueError('Expected GeoPt, got %r' %
+                                           (value,))
+
+  def _db_set_value(self, v, unused_p, value):
+    if not isinstance(value, GeoPt):
+      raise TypeError('GeoPtProperty %s can only be set to GeoPt values; '
+                      'received %r' % (self._name, value))
+    pv = v.mutable_pointvalue()
+    pv.set_x(value.lat)
+    pv.set_y(value.lon)
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_pointvalue():
+      return None
+    pv = v.pointvalue()
+    return GeoPt(pv.x(), pv.y())
+
+
+def _unpack_user(v):
+  """Internal helper to unpack a User value from a protocol buffer."""
+  uv = v.uservalue()
+  email = unicode(uv.email().decode('utf-8'))
+  auth_domain = unicode(uv.auth_domain().decode('utf-8'))
+  obfuscated_gaiaid = uv.obfuscated_gaiaid().decode('utf-8')
+  obfuscated_gaiaid = unicode(obfuscated_gaiaid)
+
+  federated_identity = None
+  if uv.has_federated_identity():
+    federated_identity = unicode(
+        uv.federated_identity().decode('utf-8'))
+
+  value = users.User(email=email,
+                     _auth_domain=auth_domain,
+                     _user_id=obfuscated_gaiaid,
+                     federated_identity=federated_identity)
+  return value
+
+
+class PickleProperty(BlobProperty):
+  """A Property whose value is any picklable Python object."""
+
+  def _to_base_type(self, value):
+    return pickle.dumps(value, pickle.HIGHEST_PROTOCOL)
+
+  def _from_base_type(self, value):
+    return pickle.loads(value)
+
+
+class JsonProperty(BlobProperty):
+  """A property whose value is any Json-encodable Python object."""
+
+  _json_type = None
+
+  @utils.positional(1 + BlobProperty._positional)
+  def __init__(self, name=None, compressed=False, json_type=None, **kwds):
+    super(JsonProperty, self).__init__(name=name, compressed=compressed, **kwds)
+    self._json_type = json_type
+
+  def _validate(self, value):
+    if self._json_type is not None and not isinstance(value, self._json_type):
+      raise TypeError('JSON property must be a %s' % self._json_type)
+
+  # Use late import so the dependency is optional.
+
+  def _to_base_type(self, value):
     try:
-      # When there is a current user, it sets both.
-      os.environ['USER_EMAIL'] = 'test@example.com'
-      x = MyModel()
-      k = x.put()
-      y = k.get()
-      self.assertFalse(y.u0 is None)
-      self.assertFalse(y.u1 is None)
-      self.assertEqual(y.u0, users.User(email='test@example.com'))
-      self.assertEqual(y.u1, users.User(email='test@example.com'))
+      import json
+    except ImportError:
+      import simplejson as json
+    return json.dumps(value)
 
-      # When the current user changes, only u1 is changed.
-      os.environ['USER_EMAIL'] = 'test2@example.com'
-      x.put()
-      y = k.get()
-      self.assertEqual(y.u0, users.User(email='test@example.com'))
-      self.assertEqual(y.u1, users.User(email='test2@example.com'))
-
-      # When we delete the property values, both are reset.
-      del x.u0
-      del x.u1
-      x.put()
-      y = k.get()
-      self.assertEqual(y.u0, users.User(email='test2@example.com'))
-      self.assertEqual(y.u1, users.User(email='test2@example.com'))
-
-      # When we set them to None, u0 stays None, u1 is reset.
-      x.u0 = None
-      x.u1 = None
-      x.put()
-      y = k.get()
-      self.assertEqual(y.u0, None)
-      self.assertEqual(y.u1, users.User(email='test2@example.com'))
-
-    finally:
-      # Reset environment.
-      del os.environ['USER_EMAIL']
-
-  def testPickleProperty(self):
-    class MyModel(model.Model):
-      pkl = model.PickleProperty()
-    sample = {'one': 1, 2: [1, 2, '3'], 3.: model.Model}
-    ent = MyModel(pkl=sample)
-    ent.put()
-    ent2 = ent.key.get()
-    self.assertTrue(ent2.pkl == sample)
-
-  def testJsonProperty(self):
-    class MyModel(model.Model):
-      pkl = model.JsonProperty('pkl')
-    sample = [1, 2, {'a': 'one', 'b': [1, 2]}, 'xyzzy', [1, 2, 3]]
-    ent = MyModel(pkl=sample)
-    ent.put()
-    ent2 = ent.key.get()
-    self.assertTrue(ent2.pkl == sample)
-
-  def testJsonPropertyTypeRestricted(self):
-    class MyModel(model.Model):
-      pkl = model.JsonProperty(json_type=dict)
-      lst = model.JsonProperty(json_type=list)
-    sample = [1, 2, {'a': 'one', 'b': [1, 2]}, 'xyzzy', [1, 2, 3]]
-    sample2 = {'foo': 2, 'bar': [1, '2', 3, ['foo', 2]]}
-
-    self.assertRaises(TypeError, MyModel, pkl=sample)
-    self.assertRaises(TypeError, MyModel, lst=sample2)
-
-    ent = MyModel(pkl=sample2, lst=sample)
-    ent.put()
-    ent2 = ent.key.get()
-    self.assertTrue(ent2.pkl == sample2)
-    self.assertTrue(ent2.lst == sample)
-
-  def DateAndOrTimePropertyTest(self, propclass, t1, t2):
-    class ClockInOut(model.Model):
-      ctime = propclass(auto_now_add=True)
-      mtime = propclass(auto_now=True)
-
-    class Person(model.Model):
-      name = model.StringProperty()
-      ctime = propclass(auto_now_add=True)
-      mtime = propclass(auto_now=True)
-      atime = propclass()
-      times = propclass(repeated=True)
-      struct = model.StructuredProperty(ClockInOut)
-      repstruct = model.StructuredProperty(ClockInOut, repeated=True)
-      localstruct = model.LocalStructuredProperty(ClockInOut)
-      replocalstruct = model.LocalStructuredProperty(ClockInOut, repeated=True)
-
-    p = Person(id=1, struct=ClockInOut(), repstruct=[ClockInOut()],
-               localstruct=ClockInOut(), replocalstruct=[ClockInOut()])
-    p.atime = t1
-    p.times = [t1, t2]
-    self.assertEqual(p.ctime, None)
-    self.assertEqual(p.mtime, None)
-    self.assertEqual(p.struct.ctime, None)
-    self.assertEqual(p.struct.mtime, None)
-    self.assertEqual(p.repstruct[0].ctime, None)
-    self.assertEqual(p.repstruct[0].mtime, None)
-    self.assertEqual(p.localstruct.ctime, None)
-    self.assertEqual(p.localstruct.mtime, None)
-    self.assertEqual(p.replocalstruct[0].ctime, None)
-    self.assertEqual(p.replocalstruct[0].mtime, None)
-    p.put()
-    self.assertNotEqual(p.ctime, None)
-    self.assertNotEqual(p.mtime, None)
-    self.assertNotEqual(p.struct.ctime, None)
-    self.assertNotEqual(p.struct.mtime, None)
-    self.assertNotEqual(p.repstruct[0].ctime, None)
-    self.assertNotEqual(p.repstruct[0].mtime, None)
-    self.assertNotEqual(p.localstruct.ctime, None)
-    self.assertNotEqual(p.localstruct.mtime, None)
-    self.assertNotEqual(p.replocalstruct[0].ctime, None)
-    self.assertNotEqual(p.replocalstruct[0].mtime, None)
-    pb = p._to_pb()
-    q = Person._from_pb(pb)
-    self.assertEqual(q.ctime, p.ctime)
-    self.assertEqual(q.mtime, p.mtime)
-    self.assertEqual(q.struct.ctime, p.struct.ctime)
-    self.assertEqual(q.struct.mtime, p.struct.mtime)
-    self.assertEqual(q.repstruct[0].ctime, p.repstruct[0].ctime)
-    self.assertEqual(q.repstruct[0].mtime, p.repstruct[0].mtime)
-    self.assertEqual(q.localstruct.ctime, p.localstruct.ctime)
-    self.assertEqual(q.localstruct.mtime, p.localstruct.mtime)
-    self.assertEqual(q.replocalstruct[0].ctime, p.replocalstruct[0].ctime)
-    self.assertEqual(q.replocalstruct[0].mtime, p.replocalstruct[0].mtime)
-    self.assertEqual(q.atime, t1)
-    self.assertEqual(q.times, [t1, t2])
-
-    property = pb.add_property()
-    property.set_name('repstruct.country')
-    property.mutable_value().set_stringvalue('iceland')
-    q = Person._from_pb(pb)
-    self.assertIsNotNone(q)
-    self.assertEqual(q.repstruct[0].ctime, p.repstruct[0].ctime)
-
-  def PrepareForPutTests(self, propclass):
-    class AuditedRecord(model.Model):
-      created = propclass(auto_now_add=True)
-      modified = propclass(auto_now=True)
-    record = AuditedRecord(id=1)
-    record._to_pb()
-    self.assertEqual(record.created, None,
-                     'auto_now_add set before entity was put')
-    self.assertEqual(record.modified, None,
-                     'auto_now set before entity was put')
-
-  def MultiDateAndOrTimePropertyTest(self, *args):
-    ctx = tasklets.get_context()
-
-    # Run tests against datastore
-    self.DateAndOrTimePropertyTest(*args)
-    self.PrepareForPutTests(args[0])
-    ctx.set_datastore_policy(False)
-
-    # Run tests against memcache
-    ctx.set_memcache_policy(True)
-    self.DateAndOrTimePropertyTest(*args)
-    self.PrepareForPutTests(args[0])
-    ctx.set_memcache_policy(False)
-
-    # Run tests against process cache
-    ctx.set_cache_policy(True)
-    self.DateAndOrTimePropertyTest(*args)
-    self.PrepareForPutTests(args[0])
-
-  def testDateTimeProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.DateTimeProperty,
-                                        datetime.datetime(1982, 12, 1, 9, 0, 0),
-                                        datetime.datetime(1995, 4, 15, 5, 0, 0))
-
-  def testDateProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.DateProperty,
-                                        datetime.date(1982, 12, 1),
-                                        datetime.date(1995, 4, 15))
-
-  def testTimeProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.TimeProperty,
-                                        datetime.time(9, 0, 0),
-                                        datetime.time(5, 0, 0, 500))
-
-  def testStructuredProperty(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StructuredProperty(Address)
-
-    p = Person()
-    p.name = 'Google'
-    a = Address(street='1600 Amphitheatre')
-    p.address = a
-    p.address.city = 'Mountain View'
-    self.assertEqual(Person.name._get_value(p), 'Google')
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(Person.address._get_value(p), a)
-    self.assertEqual(Address.street._get_value(a), '1600 Amphitheatre')
-    self.assertEqual(Address.city._get_value(a), 'Mountain View')
-
-    pb = p._to_pb()
-    self.assertEqual(str(pb), PERSON_PB)
-
-    p = Person._from_pb(pb)
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(p.address.street, '1600 Amphitheatre')
-    self.assertEqual(p.address.city, 'Mountain View')
-    self.assertEqual(p.address, a)
-
-    new_property = """
-property <
-  name: "address.country"
-  value <
-    stringValue: "USA"
-  >
-  multiple: false
->
-"""
-    person_with_extra_data = PERSON_PB + new_property
-
-    p = Person._from_pb(pb)  # Ensure the extra property is ignored.
-    self.assertIsNotNone(p)
-    self.assertEqual(p.name, 'Google')
-
-  def testRepeatedStructPropUnknownProp(self):
-    # See issue 220.  http://goo.gl/wh06E
-    # TODO: Test compressed subproperty.
-    class A(model.Model):
-      name = model.StringProperty()
-      extra = model.StringProperty()
-    class B(model.Model):
-      sp = model.StructuredProperty(A, repeated=True)
-      lsp = model.LocalStructuredProperty(A, repeated=True)
-    ent = B(
-      sp=[A(name='sp0', extra='x'), A(name='sp1', extra='y')],
-      lsp=[A(name='lsp0', extra='xx'), A(name='lsp1', extra='yy')])
-    key = ent.put()
-    del A.extra
-    del A._properties['extra']
-    ent2 = key.get()
-    self.assertTrue(ent is not ent2)
-    self.assertTrue(isinstance(ent2.sp[0]._properties['extra'],
-                               model.GenericProperty))
-    self.assertTrue(isinstance(ent2.sp[1]._properties['extra'],
-                               model.GenericProperty))
-    self.assertTrue('extra' in ent2.sp[0]._values)
-    self.assertTrue('extra' in ent2.sp[1]._values)
-    self.assertTrue(isinstance(ent2.lsp[0]._properties['extra'],
-                               model.GenericProperty))
-    self.assertTrue(isinstance(ent2.lsp[1]._properties['extra'],
-                               model.GenericProperty))
-    self.assertTrue('extra' in ent2.lsp[0]._values)
-    self.assertTrue('extra' in ent2.lsp[1]._values)
-    pb = ent2._to_pb()
-    ent3 = B._from_pb(pb)
-    self.assertEqual(ent3, ent2)
-    self.assertTrue('extra' in ent3.sp[0]._properties)
-    self.assertTrue('extra' in ent3.sp[1]._properties)
-    self.assertTrue('extra' in ent3.sp[0]._values)
-    self.assertTrue('extra' in ent3.sp[1]._values)
-    self.assertTrue('extra' in ent3.lsp[0]._properties)
-    self.assertTrue('extra' in ent3.lsp[1]._properties)
-    self.assertTrue('extra' in ent3.lsp[0]._values)
-    self.assertTrue('extra' in ent3.lsp[1]._values)
-
-  def testRepeatedStructPropUnknownNestedProp(self):
-    # Test handling for structured subproperty (ignore with warning).
-    # See issue 220.  http://goo.gl/wh06E
-    self.ExpectWarnings()
-    class Sub(model.Model):
-      val = model.IntegerProperty()
-    class A(model.Model):
-      name = model.StringProperty()
-      extra = model.StructuredProperty(Sub)
-    class B(model.Model):
-      sp = model.StructuredProperty(A, repeated=True)
-    ent = B(sp=[A(name='x', extra=Sub(val=1)), A(name='y', extra=Sub(val=2))])
-    key = ent.put()
-    del A.extra
-    del A._properties['extra']
-    ent2 = key.get()
-    self.assertTrue(ent is not ent2)
-
-  def testNestedStructuredProperty(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class AddressPair(model.Model):
-      home = model.StructuredProperty(Address)
-      work = model.StructuredProperty(Address)
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StructuredProperty(AddressPair)
-
-    p = Person()
-    p.name = 'Google'
-    p.address = AddressPair(home=Address(), work=Address())
-    p.address.home.city = 'Mountain View'
-    p.address.home.street = '1600 Amphitheatre'
-    p.address.work.city = 'San Francisco'
-    p.address.work.street = '345 Spear'
-    pb = p._to_pb()
-    self.assertEqual(str(pb), NESTED_PB)
-
-    p = Person._from_pb(pb)
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(p.address.home.street, '1600 Amphitheatre')
-    self.assertEqual(p.address.home.city, 'Mountain View')
-    self.assertEqual(p.address.work.street, '345 Spear')
-    self.assertEqual(p.address.work.city, 'San Francisco')
-
-  def testRepeatedNestedStructuredProperty(self):
-    class Person(model.Model):
-      first_name = model.StringProperty()
-      last_name = model.StringProperty()
-    class PersonPhone(model.Model):
-      person = model.StructuredProperty(Person)
-      phone = model.StringProperty()
-    class Phonebook(model.Model):
-      numbers = model.StructuredProperty(PersonPhone, repeated=True)
-
-    book = Phonebook.get_or_insert('test')
-    person = Person(first_name="John", last_name='Smith')
-    phone = PersonPhone(person=person, phone='1-212-555-1212')
-    book.numbers.append(phone)
-    pb = book._to_pb()
-
-    ent = Phonebook._from_pb(pb)
-    self.assertEqual(ent.numbers[0].person.first_name, 'John')
-    self.assertEqual(len(ent.numbers), 1)
-    self.assertEqual(ent.numbers[0].person.last_name, 'Smith')
-    self.assertEqual(ent.numbers[0].phone, '1-212-555-1212')
-
-  def testRecursiveStructuredProperty(self):
-    class Node(model.Model):
-      name = model.StringProperty()
-    Node.left = model.StructuredProperty(Node)
-    Node.right = model.StructuredProperty(Node, 'rite')
-    Node._fix_up_properties()
-    class Tree(model.Model):
-      root = model.StructuredProperty(Node)
-
-    k = model.Key(flat=['Tree', None])
-    tree = Tree()
-    tree.key = k
-    tree.root = Node(name='a',
-                     left=Node(name='a1',
-                               left=Node(name='a1a'),
-                               right=Node(name='a1b')),
-                     right=Node(name='a2',
-                                right=Node(name='a2b')))
-    pb = tree._to_pb()
-    self.assertEqual(str(pb), RECURSIVE_PB)
-
-    tree2 = Tree._from_pb(pb)
-    self.assertEqual(tree2, tree)
-
-    # Also test querying nodes.
-    tree.put()
-    tree3 = Tree.query(Tree.root.left.right.name == 'a1b').get()
-    self.assertEqual(tree3, tree)
-
-  def testRenamedProperty(self):
-    class MyModel(model.Model):
-      bb = model.BooleanProperty('b')
-      pp = model.IntegerProperty('p')
-      qq = model.StringProperty('q')
-      dd = model.FloatProperty('d')
-      kk = model.KeyProperty('k')
-      uu = model.UserProperty('u')
-      xxyy = model.GeoPtProperty('xy')
-
-    ent = MyModel()
-    k = model.Key(flat=['MyModel', 42])
-    ent.key = k
-    MyModel.bb._set_value(ent, True)
-    MyModel.pp._set_value(ent, 42)
-    MyModel.qq._set_value(ent, 'hello')
-    MyModel.dd._set_value(ent, 2.5)
-    MyModel.kk._set_value(ent, k)
-    MyModel.uu._set_value(ent, TESTUSER)
-    MyModel.xxyy._set_value(ent, AMSTERDAM)
-    self.assertEqual(MyModel.pp._get_value(ent), 42)
-    self.assertEqual(MyModel.qq._get_value(ent), 'hello')
-    self.assertEqual(MyModel.dd._get_value(ent), 2.5)
-    self.assertEqual(MyModel.kk._get_value(ent), k)
-    self.assertEqual(MyModel.uu._get_value(ent), TESTUSER)
-    self.assertEqual(MyModel.xxyy._get_value(ent), AMSTERDAM)
-    pb = self.conn.adapter.entity_to_pb(ent)
-    self.assertEqual(str(pb), INDEXED_PB)
-
-    ent = MyModel._from_pb(pb)
-    self.assertEqual(ent._get_kind(), 'MyModel')
-    k = model.Key(flat=['MyModel', 42])
-    self.assertEqual(ent.key, k)
-    self.assertEqual(MyModel.pp._get_value(ent), 42)
-    self.assertEqual(MyModel.qq._get_value(ent), 'hello')
-    self.assertEqual(MyModel.dd._get_value(ent), 2.5)
-    self.assertEqual(MyModel.kk._get_value(ent), k)
-
-  def testUnicodeRenamedProperty(self):
-    class UModel(model.Model):
-      val = model.StringProperty(u'\u00fc')
-      @classmethod
-      def _get_kind(cls):
-        return u'UModel'  # Pure ASCII Unicode kind string is find.
-    u = UModel(val='abc')
-    u.put()
-    v = u.key.get()
-    self.assertFalse(u is v)
-    self.assertEqual(u.val, v.val)
-
-  def testUnicodeKind(self):
-    def helper():
-      class UModel(model.Model):
-        val = model.StringProperty()
-        @classmethod
-        def _get_kind(cls):
-          return u'\u00fcModel'
-    self.assertRaises(model.KindError, helper)
-
-  def testRenamedStructuredProperty(self):
-    uhome = u'hom\u00e9'
-    uhome_enc_repr = r'hom\303\251'
-    class Address(model.Model):
-      st = model.StringProperty('street')
-      ci = model.StringProperty('city')
-    class AddressPair(model.Model):
-      ho = model.StructuredProperty(Address, uhome)
-      wo = model.StructuredProperty(Address, 'work')
-    class Person(model.Model):
-      na = model.StringProperty('name')
-      ad = model.StructuredProperty(AddressPair, 'address')
-
-    p = Person()
-    p.na = 'Google'
-    p.ad = AddressPair(ho=Address(), wo=Address())
-    p.ad.ho.ci = 'Mountain View'
-    p.ad.ho.st = '1600 Amphitheatre'
-    p.ad.wo.ci = 'San Francisco'
-    p.ad.wo.st = '345 Spear'
-    pb = p._to_pb()
-    expected = NESTED_PB.replace('home', uhome_enc_repr)
-    self.assertEqual(str(pb), expected)
-
-    p = Person._from_pb(pb)
-    self.assertEqual(p.na, 'Google')
-    self.assertEqual(p.ad.ho.st, '1600 Amphitheatre')
-    self.assertEqual(p.ad.ho.ci, 'Mountain View')
-    self.assertEqual(p.ad.wo.st, '345 Spear')
-    self.assertEqual(p.ad.wo.ci, 'San Francisco')
-
-  def testKindMap(self):
-    model.Model._reset_kind_map()
-    class A1(model.Model):
-      pass
-    def get_kind_map():
-      # Return the kind map with __* removed.
-      d = model.Model._kind_map
-      return dict(kv for kv in d.iteritems() if not kv[0].startswith('__'))
-    self.assertEqual(get_kind_map(), {'A1': A1})
-    class A2(model.Model):
-      pass
-    self.assertEqual(get_kind_map(), {'A1': A1, 'A2': A2})
-
-  def testMultipleProperty(self):
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StringProperty(repeated=True)
-
-    m = Person(name='Google', address=['345 Spear', 'San Francisco'])
-    m.key = model.Key(flat=['Person', None])
-    self.assertEqual(m.address, ['345 Spear', 'San Francisco'])
-    pb = m._to_pb()
-    self.assertEqual(str(pb), MULTI_PB)
-
-    m2 = Person._from_pb(pb)
-    self.assertEqual(m2, m)
-
-  def testMultipleInStructuredProperty(self):
-    class Address(model.Model):
-      label = model.StringProperty()
-      line = model.StringProperty(repeated=True)
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StructuredProperty(Address)
-
-    m = Person(name='Google',
-               address=Address(label='work',
-                               line=['345 Spear', 'San Francisco']))
-    m.key = model.Key(flat=['Person', None])
-    self.assertEqual(m.address.line, ['345 Spear', 'San Francisco'])
-    pb = m._to_pb()
-    self.assertEqual(str(pb), MULTIINSTRUCT_PB)
-
-    m2 = Person._from_pb(pb)
-    self.assertEqual(m2, m)
-
-  def testMultipleStructuredPropertyProtocolBuffers(self):
-    class Address(model.Model):
-      label = model.StringProperty()
-      text = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StructuredProperty(Address, repeated=True)
-
-    m = Person(name='Google',
-               address=[Address(label='work', text='San Francisco'),
-                        Address(label='home', text='Mountain View')])
-    m.key = model.Key(flat=['Person', None])
-    self.assertEqual(m.address[0].label, 'work')
-    self.assertEqual(m.address[0].text, 'San Francisco')
-    self.assertEqual(m.address[1].label, 'home')
-    self.assertEqual(m.address[1].text, 'Mountain View')
-    pb = m._to_pb()
-    self.assertEqual(str(pb), MULTISTRUCT_PB)
-
-    m2 = Person._from_pb(pb)
-    self.assertEqual(m2, m)
-
-  def testCannotMultipleInMultiple(self):
-    class Inner(model.Model):
-      tags = model.StringProperty(repeated=True)
-    self.assertRaises(TypeError,
-                      model.StructuredProperty, Inner, repeated=True)
-    class Outer(model.Model):
-      inner = model.StructuredProperty(Inner)
-    self.assertRaises(TypeError,
-                      model.StructuredProperty, Outer, repeated=True)
+  def _from_base_type(self, value):
     try:
-      model.StructuredProperty(Outer, repeated=True)
-    except TypeError, err:
-      self.assertEqual(str(err),
-                       'This StructuredProperty cannot use repeated=True '
-                       'because its model class (Outer) '
-                       'contains repeated properties (directly or indirectly).')
-
-  def testNullProperties(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-      zipcode = model.IntegerProperty()
-    class Person(model.Model):
-      address = model.StructuredProperty(Address)
-      age = model.IntegerProperty()
-      name = model.StringProperty()
-      k = model.KeyProperty()
-    k = model.Key(flat=['Person', 42])
-    p = Person()
-    p.key = k
-    self.assertEqual(p.address, None)
-    self.assertEqual(p.age, None)
-    self.assertEqual(p.name, None)
-    self.assertEqual(p.k, None)
-    pb = p._to_pb()
-    q = Person._from_pb(pb)
-    self.assertEqual(q.address, None)
-    self.assertEqual(q.age, None)
-    self.assertEqual(q.name, None)
-    self.assertEqual(q.k, None)
-    self.assertEqual(q, p)
-
-  def testOrphanProperties(self):
-    class Tag(model.Model):
-      names = model.StringProperty(repeated=True)
-      ratings = model.IntegerProperty(repeated=True)
-    class Address(model.Model):
-      line = model.StringProperty(repeated=True)
-      city = model.StringProperty()
-      zipcode = model.IntegerProperty()
-      tags = model.StructuredProperty(Tag)
-    class Person(model.Model):
-      address = model.StructuredProperty(Address)
-      age = model.IntegerProperty(repeated=True)
-      name = model.StringProperty()
-      k = model.KeyProperty()
-    k = model.Key(flat=['Person', 42])
-    p = Person(name='White House', k=k, age=[210, 211],
-               address=Address(line=['1600 Pennsylvania', 'Washington, DC'],
-                               tags=Tag(names=['a', 'b'], ratings=[1, 2]),
-                               zipcode=20500))
-    p.key = k
-    pb = p._to_pb()
-    q = model.Model._from_pb(pb)
-    qb = q._to_pb()
-    linesp = str(pb).splitlines(True)
-    linesq = str(qb).splitlines(True)
-    lines = difflib.unified_diff(linesp, linesq, 'Expected', 'Actual')
-    self.assertEqual(pb, qb, ''.join(lines))
-
-  def testMetaModelRepr(self):
-    class MyModel(model.Model):
-      name = model.StringProperty()
-      tags = model.StringProperty(repeated=True)
-      age = model.IntegerProperty(name='a')
-      other = model.KeyProperty()
-    self.assertEqual(repr(MyModel),
-                     "MyModel<"
-                     "age=IntegerProperty('a'), "
-                     "name=StringProperty('name'), "
-                     "other=KeyProperty('other'), "
-                     "tags=StringProperty('tags', repeated=True)"
-                     ">")
-
-  def testModelToDict(self):
-    class MyModel(model.Model):
-      foo = model.StringProperty(name='f')
-      bar = model.StringProperty(default='bar')
-      baz = model.StringProperty(repeated=True)
-    ent = MyModel()
-    self.assertEqual({'foo': None, 'bar': 'bar', 'baz': []},
-                     ent._to_dict())
-    self.assertEqual({'foo': None}, ent._to_dict(include=['foo']))
-    self.assertEqual({'bar': 'bar', 'baz': []},
-                     ent._to_dict(exclude=frozenset(['foo'])))
-    self.assertEqual({}, ent.to_dict(include=['foo'], exclude=['foo']))
-    self.assertRaises(TypeError, ent._to_dict, include='foo')
-    self.assertRaises(TypeError, ent._to_dict, exclude='foo')
-    ent.foo = 'x'
-    ent.bar = 'y'
-    ent.baz = ['a']
-    self.assertEqual({'foo': 'x', 'bar': 'y', 'baz': ['a']},
-                     ent.to_dict())
-
-  def testModelToDictStructures(self):
-    class MySubmodel(model.Model):
-      foo = model.StringProperty()
-      bar = model.IntegerProperty()
-    class MyModel(model.Model):
-      a = model.StructuredProperty(MySubmodel)
-      b = model.LocalStructuredProperty(MySubmodel, repeated=True)
-      c = model.StructuredProperty(MySubmodel)
-      d = model.LocalStructuredProperty(MySubmodel)
-      e = model.StructuredProperty(MySubmodel, repeated=True)
-    x = MyModel(a=MySubmodel(foo='foo', bar=42),
-                b=[MySubmodel(foo='f'), MySubmodel(bar=4)])
-    self.assertEqual({'a': {'foo': 'foo', 'bar': 42},
-                      'b': [{'foo': 'f', 'bar': None,},
-                            {'foo': None, 'bar': 4}],
-                      'c': None,
-                      'd': None,
-                      'e': [],
-                      },
-                     x.to_dict())
-
-  def testModelPickling(self):
-    global MyModel
-    class MyModel(model.Model):
-      name = model.StringProperty()
-      tags = model.StringProperty(repeated=True)
-      age = model.IntegerProperty()
-      other = model.KeyProperty()
-    my = MyModel(name='joe', tags=['python', 'ruby'], age=42,
-                 other=model.Key(MyModel, 42))
-    for proto in 0, 1, 2:
-      s = pickle.dumps(my, proto)
-      mycopy = pickle.loads(s)
-      self.assertEqual(mycopy, my)
-
-  def testRejectOldPickles(self):
-    global MyModel
-    class MyModel(db.Model):
-      name = db.StringProperty()
-    dumped = []
-    for proto in 0, 1, 2:
-      x = MyModel()
-      s = pickle.dumps(x, proto)
-      dumped.append(s)
-      x.name = 'joe'
-      s = pickle.dumps(x, proto)
-      dumped.append(s)
-      db.put(x)
-      s = pickle.dumps(x, proto)
-      dumped.append(s)
-    class MyModel(model.Model):
-      name = model.StringProperty()
-    for s in dumped:
-      self.assertRaises(Exception, pickle.loads, s)
-
-  def testModelRepr(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StructuredProperty(Address)
-
-    p = Person(name='Google', address=Address(street='345 Spear', city='SF'))
-    self.assertEqual(
-      repr(p),
-      "Person(address=Address(city='SF', street='345 Spear'), name='Google')")
-    p.key = model.Key(pairs=[('Person', 42)])
-    self.assertEqual(
-      repr(p),
-      "Person(key=Key('Person', 42), "
-      "address=Address(city='SF', street='345 Spear'), name='Google')")
-
-  def testModelReprNoSideEffects(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    a = Address(street='345 Spear', city='SF')
-    # White box test: values are 'top values'.
-    self.assertEqual(a._values, {'street': '345 Spear', 'city': 'SF'})
-    a.put()
-    # White box test: put() has turned wrapped values in _BaseValue().
-    self.assertEqual(a._values, {'street': model._BaseValue('345 Spear'),
-                                 'city': model._BaseValue('SF')})
-    self.assertEqual(repr(a),
-                     "Address(key=Key('Address', 1), "
-                     # (Note: Unicode literals.)
-                     "city=u'SF', street=u'345 Spear')")
-    # White box test: _values is unchanged.
-    self.assertEqual(a._values, {'street': model._BaseValue('345 Spear'),
-                                 'city': model._BaseValue('SF')})
-
-  def testModelRepr_RenamedProperty(self):
-    class Address(model.Model):
-      street = model.StringProperty('Street')
-      city = model.StringProperty('City')
-    a = Address(street='345 Spear', city='SF')
-    self.assertEqual(repr(a), "Address(city='SF', street='345 Spear')")
-
-  def testModelRepr_HugeProperty(self):
-    class Biggy(model.Model):
-      blob = model.BlobProperty()
-      text = model.TextProperty()
-    small = Biggy(blob='xyz', text=u'abc')
-    self.assertEqual(repr(small), "Biggy(blob='xyz', text=u'abc')")
-    large = Biggy(blob='x'*500, text='a'*500)
-    self.assertEqual(repr(large),
-                     "Biggy(blob='%s', text='%s')" % ('x'*500, 'a'*500))
-    huge = Biggy(blob='x'*1000, text='a'*1000)
-    self.assertEqual(repr(huge),
-                     "Biggy(blob='%s...', text='%s...')" % ('x'*499, 'a'*499))
-
-  def testModelRepr_CustomRepr(self):
-    # Demonstrate how to override a property's repr.
-    class MyJsonProperty(model.JsonProperty):
-      def _value_to_repr(self, value):
-        val = self._opt_call_from_base_type(value)
-        return json.dumps(val, indent=2)
-    class Jumpy(model.Model):
-      jsn = MyJsonProperty()
-    jump = Jumpy(jsn={'a': [123, {'b': ['xyz', 'pqr']}]})
-    self.assertEqual(repr(jump),
-                     'Jumpy(jsn={\n'
-                     '  "a": [\n'
-                     '    123, \n'
-                     '    {\n'
-                     '      "b": [\n'
-                     '        "xyz", \n'
-                     '        "pqr"\n'
-                     '      ]\n'
-                     '    }\n'
-                     '  ]\n'
-                     '})')
-
-  def testModel_RenameAlias(self):
-    class Person(model.Model):
-      name = model.StringProperty('Name')
-    p = Person(name='Fred')
-    self.assertRaises(AttributeError, getattr, p, 'Name')
-    self.assertRaises(AttributeError, Person, Name='Fred')
-    # Unfortunately, p.Name = 'boo' just sets p.__dict__['Name'] = 'boo'.
-    self.assertRaises(AttributeError, getattr, p, 'foo')
-
-  def testExpando_RenameAlias(self):
-    class Person(model.Expando):
-      name = model.StringProperty('Name')
-
-    p = Person(name='Fred')
-    self.assertEqual(p.name, 'Fred')
-    self.assertEqual(p.Name, 'Fred')
-    self.assertEqual(p._values, {'Name': 'Fred'})
-    self.assertTrue(p._properties, Person._properties)
-
-    p = Person(Name='Fred')
-    self.assertEqual(p.name, 'Fred')
-    self.assertEqual(p.Name, 'Fred')
-    self.assertEqual(p._values, {'Name': 'Fred'})
-    self.assertTrue(p._properties, Person._properties)
-
-    p = Person()
-    p.Name = 'Fred'
-    self.assertEqual(p.name, 'Fred')
-    self.assertEqual(p.Name, 'Fred')
-    self.assertEqual(p._values, {'Name': 'Fred'})
-    self.assertTrue(p._properties, Person._properties)
-
-    self.assertRaises(AttributeError, getattr, p, 'foo')
-
-  def testModel_RenameSwap(self):
-    class Person(model.Model):
-      foo = model.StringProperty('bar')
-      bar = model.StringProperty('foo')
-    p = Person(foo='foo', bar='bar')
-    self.assertEqual(p._values,
-                     {'foo': 'bar', 'bar': 'foo'})
-
-  def testExpando_RenameSwap(self):
-    class Person(model.Expando):
-      foo = model.StringProperty('bar')
-      bar = model.StringProperty('foo')
-    p = Person(foo='foo', bar='bar', baz='baz')
-    self.assertEqual(p._values,
-                     {'foo': 'bar', 'bar': 'foo', 'baz': 'baz'})
-    p = Person()
-    p.foo = 'foo'
-    p.bar = 'bar'
-    p.baz = 'baz'
-    self.assertEqual(p._values,
-                     {'foo': 'bar', 'bar': 'foo', 'baz': 'baz'})
-
-  def testExpando_Repr(self):
-    class E(model.Expando):
-      pass
-    ent = E(a=1, b=[2], c=E(x=3, y=[4]))
-    self.assertEqual(repr(ent),
-                     "E(a=1, b=[2], c=E(x=3, y=[4]))")
-    pb = ent._to_pb(set_key=False)
-    ent2 = E._from_pb(pb)
-    # NOTE: The 'E' kind name for the inner instance is not persisted,
-    # so it comes out as Expando.
-    self.assertEqual(repr(ent2),
-                     "E(a=1, b=[2], c=Expando(x=3, y=[4]))")
-
-  def testPropertyRepr(self):
-    p = model.Property()
-    self.assertEqual(repr(p), 'Property()')
-
-    p = model.IntegerProperty('foo', indexed=False, repeated=True)
-    self.assertEqual(repr(p),
-                     "IntegerProperty('foo', indexed=False, repeated=True)")
-
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    p = model.StructuredProperty(Address, 'foo')
-    self.assertEqual(repr(p), "StructuredProperty(Address, 'foo')")
-    q = model.LocalStructuredProperty(Address, 'bar')
-    self.assertEqual(repr(q), "LocalStructuredProperty(Address, 'bar')")
-
-    class MyModel(model.Model):
-      boolp = model.BooleanProperty()
-      intp = model.IntegerProperty()
-      floatp = model.FloatProperty()
-      strp = model.StringProperty()
-      txtp = model.TextProperty()
-      blobp = model.BlobProperty()
-      geoptp = model.GeoPtProperty()
-      userp = model.UserProperty()
-      keyp = model.KeyProperty()
-      blobkeyp = model.BlobKeyProperty()
-      datetimep = model.DateTimeProperty()
-      datep = model.DateProperty()
-      timep = model.TimeProperty()
-      structp = model.StructuredProperty(Address)
-      localstructp = model.LocalStructuredProperty(Address)
-      genp = model.GenericProperty()
-      compp = model.ComputedProperty(lambda _: 'x')
-    self.assertEqual(repr(MyModel.key), "ModelKey('__key__')")
-    for prop in MyModel._properties.itervalues():
-      s = repr(prop)
-      self.assertTrue(s.startswith(prop.__class__.__name__ + '('), s)
-
-  def testLengthRestriction(self):
-    # Check the following rules for size validation of blobs and texts:
-    # - Unindexed blob and text properties can be unlimited in size.
-    # - Indexed blob properties are limited to 500 bytes.
-    # - Indexed text properties are limited to 500 characters.
-    class MyModel(model.Model):
-      ublob = model.BlobProperty()  # Defaults to indexed=False.
-      iblob = model.BlobProperty(indexed=True)
-      utext = model.TextProperty()  # Defaults to indexed=False.
-      itext = model.TextProperty(indexed=True)
-      ustr = model.StringProperty(indexed=False)
-      istr = model.StringProperty()  # Defaults to indexed=True.
-      ugen = model.GenericProperty(indexed=False)
-      igen = model.GenericProperty(indexed=True)
-    largeblob = 'x'*500
-    toolargeblob = 'x'*501
-    hugeblob = 'x'*10000
-    largetext = u'\u1234'*500
-    toolargetext = u'\u1234'*500 + 'x'
-    hugetext = u'\u1234'*10000
-    ent = MyModel()
-    # These should all fail:
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'iblob', toolargeblob)
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'itext', toolargetext)
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'itext', toolargeblob)
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'istr', toolargetext)
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'istr', toolargeblob)
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'igen', toolargetext)
-    self.assertRaises(datastore_errors.BadValueError,
-                      setattr, ent, 'igen', toolargeblob)
-    # These should all work:
-    ent.ublob = hugeblob
-    ent.iblob = largeblob
-    ent.utext = hugetext
-    ent.itext = largetext
-    ent.ustr = hugetext
-    ent.istr = largetext
-    ent.ugen = hugetext
-    ent.igen = largetext
-    # Writing the entity should work:
-    key = ent.put()
-    # Reading it back should work:
-    ent2 = key.get()
-    self.assertEqual(ent2, ent)
-    self.assertTrue(ent2 is not ent)
-
-  def testValidation(self):
-    class All(model.Model):
-      s = model.StringProperty()
-      i = model.IntegerProperty()
-      f = model.FloatProperty()
-      t = model.TextProperty()
-      b = model.BlobProperty()
-      k = model.KeyProperty()
-    BVE = datastore_errors.BadValueError
-    a = All()
-
-    a.s = None
-    a.s = 'abc'
-    a.s = u'def'
-    a.s = u'\xff'
-    a.s = u'\u1234'
-    a.s = u'\U00012345'
-    self.assertRaises(BVE, setattr, a, 's', 0)
-    self.assertRaises(BVE, setattr, a, 's', '\xff')
-
-    a.i = None
-    a.i = 42
-    a.i = 123L
-    self.assertRaises(BVE, setattr, a, 'i', '')
-
-    a.f = None
-    a.f = 42
-    a.f = 3.14
-    self.assertRaises(BVE, setattr, a, 'f', '')
-
-    a.t = None
-    a.t = 'abc'
-    a.t = u'def'
-    a.t = u'\xff'
-    a.t = u'\u1234'
-    a.t = u'\U00012345'
-    self.assertRaises(BVE, setattr, a, 't', 0)
-    self.assertRaises(BVE, setattr, a, 't', '\xff')
-
-    a.b = None
-    a.b = 'abc'
-    a.b = '\xff'
-    self.assertRaises(BVE, setattr, a, 'b', u'')
-    self.assertRaises(BVE, setattr, a, 'b', u'\u1234')
-
-    a.k = None
-    a.k = model.Key('Foo', 42)
-    self.assertRaises(BVE, setattr, a, 'k', '')
-
-  def testLocalStructuredProperty(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.LocalStructuredProperty(Address)
-
-    p = Person()
-    p.name = 'Google'
-    a = Address(street='1600 Amphitheatre')
-    p.address = a
-    p.address.city = 'Mountain View'
-    self.assertEqual(p.address.key, None)
-    self.assertEqual(Person.name._get_value(p), 'Google')
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(Person.address._get_value(p), a)
-    self.assertEqual(Address.street._get_value(a), '1600 Amphitheatre')
-    self.assertEqual(Address.city._get_value(a), 'Mountain View')
-
-    pb = p._to_pb()
-    self.assertEqual(pb.raw_property(0).meaning(),
-                     entity_pb.Property.ENTITY_PROTO)
-    # TODO: Validate pb
-
-    # Check we can enable and disable compression and have old data still
-    # be understood.
-    Person.address._compressed = True
-    p = Person._from_pb(pb)
-    self.assertEqual(p.address.key, None)
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(p.address.street, '1600 Amphitheatre')
-    self.assertEqual(p.address.city, 'Mountain View')
-    self.assertEqual(p.address.key, None)
-    self.assertEqual(p.address, a)
-    self.assertEqual(repr(Person.address),
-                     "LocalStructuredProperty(Address, 'address', "
-                     "compressed=True)")
-    pb = p._to_pb()
-
-    Person.address._compressed = False
-    p = Person._from_pb(pb)
-    self.assertEqual(p.address.key, None)
-
-    # Now try with an empty address
-    p = Person()
-    p.name = 'Google'
-    self.assertTrue(p.address is None)
-    pb = p._to_pb()
-    p = Person._from_pb(pb)
-    self.assertTrue(p.address is None)
-    self.assertEqual(p.name, 'Google')
-
-  def testLocalStructuredPropertyCompressed(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.LocalStructuredProperty(Address, compressed=True)
-
-    k = model.Key('Person', 'google')
-    p = Person(key=k)
-    p.name = 'Google'
-    p.address = Address(street='1600 Amphitheatre', city='Mountain View')
-    p.put()
-
-    # To test compression and deserialization with untouched properties.
-    p = k.get()
-    p.put()
-
-    p = k.get()
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(p.address.street, '1600 Amphitheatre')
-    self.assertEqual(p.address.city, 'Mountain View')
-
-    # To test compression and deserialization after properties were accessed.
-    p.put()
-
-  def testLocalStructuredPropertyRepeated(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.LocalStructuredProperty(Address, repeated=True)
-
-    k = model.Key('Person', 'google')
-    p = Person(key=k)
-    p.name = 'Google'
-    p.address.append(Address(street='1600 Amphitheatre', city='Mountain View'))
-    p.address.append(Address(street='Webb crater', city='Moon'))
-    p.put()
-
-    # To test compression and deserialization with untouched properties.
-    p = k.get()
-    p.put()
-
-    p = k.get()
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(p.address[0].street, '1600 Amphitheatre')
-    self.assertEqual(p.address[0].city, 'Mountain View')
-    self.assertEqual(p.address[1].street, 'Webb crater')
-    self.assertEqual(p.address[1].city, 'Moon')
-
-    # To test compression and deserialization after properties were accessed.
-    p.put()
-
-  def testLocalStructuredPropertyRepeatedCompressed(self):
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.LocalStructuredProperty(Address, repeated=True,
-                                              compressed=True)
-
-    k = model.Key('Person', 'google')
-    p = Person(key=k)
-    p.name = 'Google'
-    p.address.append(Address(street='1600 Amphitheatre', city='Mountain View'))
-    p.address.append(Address(street='Webb crater', city='Moon'))
-    p.put()
-
-    # To test compression and deserialization with untouched properties.
-    p = k.get()
-    p.put()
-
-    p = k.get()
-    self.assertEqual(p.name, 'Google')
-    self.assertEqual(p.address[0].street, '1600 Amphitheatre')
-    self.assertEqual(p.address[0].city, 'Mountain View')
-    self.assertEqual(p.address[1].street, 'Webb crater')
-    self.assertEqual(p.address[1].city, 'Moon')
-
-    # To test compression and deserialization after properties were accessed.
-    p.put()
-
-  def testLocalStructuredPropertyRepeatedRepeated(self):
-    class Inner(model.Model):
-      a = model.IntegerProperty(repeated=True)
-    self.assertTrue(Inner._has_repeated)
-    class Outer(model.Model):
-      b = model.LocalStructuredProperty(Inner, repeated=True)
-    self.assertTrue(Inner._has_repeated)
-    x = Outer(b=[Inner(a=[1, 2]), Inner(a=[3, 4, 5])])
-    k = x.put()
-    y = k.get()
-    self.assertTrue(x is not y)
-    self.assertEqual(x, y)
-
-  def testLocalStructuredPropertyWithoutKey(self):
-    class Inner(model.Model):
-      pass
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner, keep_keys=False)
-    outer1 = Outer(inner=Inner(key=model.Key(Inner, None)))
-    key1 = outer1.put()
-    self.assertEqual(outer1.inner.key, None)
-    outer2 = Outer(inner=Inner(id=42))
-    key2 = outer2.put()
-    self.assertEqual(outer2.inner.key, None)
-
-    # Redefine the class with keep_keys=True; no key is loaded.
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner, keep_keys=True)
-    other1 = key1.get()
-    self.assertEqual(other1.inner.key, None)
-    other2 = key2.get()
-    self.assertEqual(other2.inner.key, None)
-
-  def testLocalStructuredPropertyWithKey(self):
-    class Inner(model.Model):
-      pass
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner, keep_keys=True)
-    outer1 = Outer(inner=Inner())
-    key1 = outer1.put()  # This forces an incomplete key on inner
-    self.assertEqual(outer1.inner.key.id(), None)
-    outer2 = Outer(inner=Inner(id=42))
-    key2 = outer2.put()
-    self.assertEqual(outer2.inner.key.id(), 42)
-
-    # Check that incomplete and complete keys are read back.
-    x1 = key1.get()
-    self.assertEqual(x1.inner.key.id(), None)  # Incomplete key is kept
-    x2 = key2.get()
-    self.assertEqual(x2.inner.key.id(), 42)
-    self.assertNotEqual(x1.inner, x2.inner)  # Different key -> unequal
-
-    # Redefine the class without keep_keys.
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner)
-    a1 = key1.get()
-    self.assertEqual(a1.inner.key, None)  # Incomplete key is dropped
-    a2 = key2.get()
-    self.assertEqual(a2.inner.key, None)  # Complete key is dropped, too
-
-    # Now read this back using a GenericProperty.
-    class Outer(model.Model):
-      inner = model.GenericProperty(indexed=False)
-    b1 = key1.get()
-    self.assertEqual(b1.inner.key.id(), None)  # Incomplete key is kept
-    b2 = key2.get()
-    self.assertEqual(b2.inner.key.id(), 42)
-
-    # A write/read cycle should preserve the inner key.
-    b2.put()
-    b2 = key2.get()
-    self.assertEqual(b2.inner.key.id(), 42)
-
-    # Finally, write back a2 (!) and read it back; the inner key is lost.
-    a2.put()
-    b2 = key2.get()
-    self.assertEqual(b2.inner.key, None)
-
-  def testLocalStructuredPropertyKeyDisagreement(self):
-    class Inner(model.Model):
-      pass
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner, keep_keys=True)
-    outer1 = Outer(inner=Inner())
-    outer2 = Outer(inner=Inner(id=42))
-    key1 = outer1.put()
-    key2 = outer2.put()
-    self.assertEqual(outer1.inner.key, model.Key(Inner, None))
-    self.assertEqual(outer2.inner.key, model.Key(Inner, 42))
-
-    # This is a dead end.
-    class AnotherInner(model.Model):
-      pass
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(AnotherInner, keep_keys=True)
-    other1 = key1.get()
-    self.assertRaises(model.KindError, lambda: other1.inner)
-    self.assertRaises(model.KindError, other1.put)
-    other2 = key2.get()
-    self.assertRaises(model.KindError, lambda: other2.inner)
-    self.assertRaises(model.KindError, other2.put)
-
-    # This works.
-    class YetAnotherInner(model.Model):
-      pass
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(YetAnotherInner, keep_keys=False)
-    another1 = key1.get()
-    self.assertTrue(isinstance(another1.inner, YetAnotherInner))
-    self.assertEqual(another1.inner.key, None)
-    another1.put()
-    another2 = key2.get()
-    self.assertTrue(isinstance(another2.inner, YetAnotherInner))
-    self.assertEqual(another2.inner.key, None)
-    another2.put()
-
-  def testEmptyList(self):
-    class Person(model.Model):
-      name = model.StringProperty(repeated=True)
-    p = Person()
-    self.assertEqual(p.name, [])
-    pb = p._to_pb()
-    q = Person._from_pb(pb)
-    self.assertEqual(q.name, [], str(pb))
-
-  def testEmptyListSerialized(self):
-    class Person(model.Model):
-      name = model.StringProperty(repeated=True)
-    p = Person()
-    pb = p._to_pb()
-    q = Person._from_pb(pb)
-    self.assertEqual(q.name, [], str(pb))
-
-  def testDatetimeSerializing(self):
-    class Person(model.Model):
-      t = model.GenericProperty()
-    p = Person(t=datetime.datetime.utcnow())
-    pb = p._to_pb()
-    q = Person._from_pb(pb)
-    self.assertEqual(p.t, q.t)
-
-  def testExpandoKey(self):
-    class Ex(model.Expando):
-      pass
-    e = Ex()
-    self.assertEqual(e.key, None)
-    k = model.Key('Ex', 'abc')
-    e.key = k
-    self.assertEqual(e.key, k)
-    k2 = model.Key('Ex', 'def')
-    e2 = Ex(key=k2)
-    self.assertEqual(e2.key, k2)
-    e2.key = k
-    self.assertEqual(e2.key, k)
-    self.assertEqual(e, e2)
-    del e.key
-    self.assertEqual(e.key, None)
-
-  def testExpandoRead(self):
-    class Person(model.Model):
-      name = model.StringProperty()
-      city = model.StringProperty()
-    p = Person(name='Guido', city='SF')
-    pb = p._to_pb()
-    q = model.Expando._from_pb(pb)
-    self.assertEqual(q.name, 'Guido')
-    self.assertEqual(q.city, 'SF')
-
-  def testExpandoWrite(self):
-    k = model.Key(flat=['Model', 42])
-    p = model.Expando(key=k)
-    p.k = k
-    p.p = 42
-    p.q = 'hello'
-    p.u = TESTUSER
-    p.d = 2.5
-    p.b = True
-    p.xy = AMSTERDAM
-    pb = p._to_pb()
-    self.assertEqual(str(pb), GOLDEN_PB)
-
-  def testExpandoDelAttr(self):
-    class Ex(model.Expando):
-      static = model.StringProperty()
-
-    e = Ex()
-    self.assertEqual(e.static, None)
-    self.assertRaises(AttributeError, getattr, e, 'dynamic')
-    self.assertRaises(AttributeError, getattr, e, '_absent')
-
-    e.static = 'a'
-    e.dynamic = 'b'
-    self.assertEqual(e.static, 'a')
-    self.assertEqual(e.dynamic, 'b')
-
-    e = Ex(static='a', dynamic='b')
-    self.assertEqual(e.static, 'a')
-    self.assertEqual(e.dynamic, 'b')
-
-    del e.static
-    del e.dynamic
-    self.assertEqual(e.static, None)
-    self.assertRaises(AttributeError, getattr, e, 'dynamic')
-
-  def testExpandoRepr(self):
-    class Person(model.Expando):
-      name = model.StringProperty('Name')
-      city = model.StringProperty('City')
-    p = Person(name='Guido', zip='00000')
-    p.city = 'SF'
-    self.assertEqual(repr(p),
-                     "Person(city='SF', name='Guido', zip='00000')")
-    # White box confirmation.
-    self.assertEqual(p._values,
-                     {'City': 'SF', 'Name': 'Guido', 'zip': '00000'})
-
-  def testExpandoNested(self):
-    p = model.Expando()
-    nest = model.Expando()
-    nest.foo = 42
-    nest.bar = 'hello'
-    p.nest = nest
-    self.assertEqual(p.nest.foo, 42)
-    self.assertEqual(p.nest.bar, 'hello')
-    pb = p._to_pb()
-    q = model.Expando._from_pb(pb)
-    self.assertEqual(q.nest.foo, 42)
-    self.assertEqual(q.nest.bar, 'hello')
-
-  def testExpandoSubclass(self):
-    class Person(model.Expando):
-      name = model.StringProperty()
-    p = Person()
-    p.name = 'Joe'
-    p.age = 7
-    self.assertEqual(p.name, 'Joe')
-    self.assertEqual(p.age, 7)
-
-  def testExpandoConstructor(self):
-    p = model.Expando(foo=42, bar='hello')
-    self.assertEqual(p.foo, 42)
-    self.assertEqual(p.bar, 'hello')
-    pb = p._to_pb()
-    q = model.Expando._from_pb(pb)
-    self.assertEqual(q.foo, 42)
-    self.assertEqual(q.bar, 'hello')
-
-  def testExpandoNestedConstructor(self):
-    p = model.Expando(foo=42, bar=model.Expando(hello='hello'))
-    self.assertEqual(p.foo, 42)
-    self.assertEqual(p.bar.hello, 'hello')
-    pb = p._to_pb()
-    q = model.Expando._from_pb(pb)
-    self.assertEqual(q.foo, 42)
-    self.assertEqual(q.bar.hello, 'hello')
-
-  def testExpandoRepeatedProperties(self):
-    p = model.Expando(foo=1, bar=[1, 2])
-    p.baz = [3]
-    self.assertFalse(p._properties['foo']._repeated)
-    self.assertTrue(p._properties['bar']._repeated)
-    self.assertTrue(p._properties['baz']._repeated)
-    p.bar = 'abc'
-    self.assertFalse(p._properties['bar']._repeated)
-    pb = p._to_pb()
-    q = model.Expando._from_pb(pb)
-    q.key = None
-    self.assertFalse(p._properties['foo']._repeated)
-    self.assertFalse(p._properties['bar']._repeated)
-    self.assertTrue(p._properties['baz']._repeated)
-    self.assertEqual(q, model.Expando(foo=1, bar='abc', baz=[3]))
-
-  def testExpandoUnindexedProperties(self):
-    class Mine(model.Expando):
-      pass
-    a = Mine(foo=1, bar=['a', 'b'])
-    self.assertTrue(a._properties['foo']._indexed)
-    self.assertTrue(a._properties['bar']._indexed)
-    a._default_indexed = False
-    a.baz = 'baz'
-    self.assertFalse(a._properties['baz']._indexed)
-    Mine._default_indexed = False
-    b = Mine(foo=1)
-    b.bar = ['a', 'b']
-    self.assertFalse(b._properties['foo']._indexed)
-    self.assertFalse(b._properties['bar']._indexed)
-
-  def testExpandoLocalStructuredProperty(self):
-    class Inner(model.Model):
-      name = model.StringProperty()
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner)
-    x = Outer(inner=Inner(name='x'))
-    key = x.put()
-    class Outer(model.Expando):
-      pass
-    y = key.get()
-    self.assertEqual(y.inner, model.Expando(name='x'))
-    y.inner.name = 'x2'
-    y.put()
-    z = key.get()
-    self.assertEqual(z.inner, model.Expando(name='x2'))
-    z.inner = '42'
-    z.put()
-    u = key.get()
-    self.assertEqual(u.inner, '42')
-
-  def testExpandoLocalStructuredPropertyKeepKeys(self):
-    class Inner(model.Model):
-      name = model.StringProperty()
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner, keep_keys=True)
-    x = Outer(inner=Inner(name='x'))
-    key = x.put()
-    class Outer(model.Expando):
-      pass
-    y = key.get()
-    self.assertEqual(y.inner, Inner(name='x', key=model.Key(Inner, None)))
-    y.inner.name = 'x2'
-    y.put()
-    z = key.get()
-    self.assertEqual(z.inner, Inner(name='x2', key=model.Key(Inner, None)))
-
-    # Remove Inner from the kind map.  We'll get inner back as Expando.
-    del model.Model._kind_map['Inner']
-    w = key.get()
-    self.assertEqual(w.inner, model.Expando(name='x2',
-                                            key=model.Key('Inner', None)))
-
-    # Restore Inner in the kind map.
-    model.Model._kind_map['Inner'] = Inner
-
-    # It should be possible to replace an entity with a non-entity.
-    z.inner = '42'
-    z.put()
-    u = key.get()
-    self.assertEqual(u.inner, '42')
-
-  def testExpandoLocalStructuredPropertyBadKey(self):
-    class Inner(model.Model):
-      name = model.StringProperty()
-    class Outer(model.Model):
-      inner = model.LocalStructuredProperty(Inner, keep_keys=True)
-    x = Outer(inner=Inner(name='x'))
-    pb = x._to_pb()
-    v = pb.raw_property(0).value()
-    sval = v.stringvalue()
-    inner_pb = entity_pb.EntityProto()
-    inner_pb.MergePartialFromString(sval)
-    inner_pb.key().path().clear_element()
-    sval = inner_pb.SerializePartialToString()
-    v.set_stringvalue(sval)
-    y = Outer._from_pb(pb)
-    self.assertEqual(y.inner, Inner(name='x'))
-
-  def testGenericPropertyCompressedRefusesIndexed(self):
-    self.assertRaises(NotImplementedError,
-                      model.GenericProperty, compressed=True, indexed=True)
-
-  def testGenericPropertyCompressed(self):
-    class Goo(model.Model):
-      comp = model.GenericProperty(compressed=True)
-      comps = model.GenericProperty(compressed=True, repeated=True)
-    self.assertFalse(Goo.comp._indexed)
-    self.assertFalse(Goo.comps._indexed)
-    a = Goo(comp='fizzy', comps=['x'*1000, 'y'*1000])
-    a.put()
-    self.assertTrue(isinstance(a._values['comp'].b_val,
-                               model._CompressedValue))
-    self.assertTrue(isinstance(a._values['comps'][0].b_val,
-                               model._CompressedValue))
-    self.assertTrue(isinstance(a._values['comps'][1].b_val,
-                               model._CompressedValue))
-    b = a.key.get()
-    self.assertEqual(a, b)
-    self.assertTrue(a is not b)
-    # Extra-double-check.
-    self.assertEqual(b.comp, 'fizzy')
-    self.assertEqual(b.comps, ['x'*1000, 'y'*1000])
-    # Now try some non-string values.
-    x = Goo(comp=42, comps=[u'\u1234'*1000, datetime.datetime(2012, 2, 23)])
-    x.put()
-    self.assertFalse(isinstance(x._values['comp'].b_val,
-                                model._CompressedValue))
-    self.assertFalse(isinstance(x._values['comps'][0].b_val,
-                                model._CompressedValue))
-    self.assertFalse(isinstance(x._values['comps'][1].b_val,
-                                model._CompressedValue))
-    y = x.key.get()
-    self.assertEqual(x, y)
-
-  def testExpandoReadsCompressed(self):
-    class Goo(model.Model):
-      comp = model.BlobProperty(compressed=True)
-    x = Goo(comp='foo')
-    x.put()
-    class Goo(model.Expando):
-      pass
-    y = x.key.get()
-    self.assertTrue(y._properties['comp']._compressed)
-    self.assertEqual(y.comp, 'foo')
-
-  def testComputedProperty(self):
-    class ComputedTest(model.Model):
-      name = model.StringProperty()
-      name_lower = model.ComputedProperty(lambda self: self.name.lower())
-
-      @model.ComputedProperty
-      def length(self):
-        return len(self.name)
-
-      def _compute_hash(self):
-        return hash(self.name)
-      computed_hash = model.ComputedProperty(_compute_hash, name='hashcode')
-
-    m = ComputedTest(name='Foobar')
-    m._prepare_for_put()
-    pb = m._to_pb()
-
-    for p in pb.property_list():
-      if p.name() == 'name_lower':
-        self.assertEqual(p.value().stringvalue(), 'foobar')
+      import json
+    except ImportError:
+      import simplejson as json
+    return json.loads(value)
+
+
+class UserProperty(Property):
+  """A Property whose value is a User object.
+
+  Note: this exists for backwards compatibility with existing
+  datastore schemas only; we do not recommend storing User objects
+  directly in the datastore, but instead recommend storing the
+  user.user_id() value.
+  """
+
+  _attributes = Property._attributes + ['_auto_current_user',
+                                        '_auto_current_user_add']
+
+  _auto_current_user = False
+  _auto_current_user_add = False
+
+  @utils.positional(1 + Property._positional)
+  def __init__(self, name=None, auto_current_user=False,
+               auto_current_user_add=False, **kwds):
+    super(UserProperty, self).__init__(name=name, **kwds)
+    # TODO: Disallow combining auto_current_user* and default?
+    if self._repeated:
+      if auto_current_user:
+        raise ValueError('UserProperty could use auto_current_user and be '
+                         'repeated, but there would be no point.')
+      elif auto_current_user_add:
+        raise ValueError('UserProperty could use auto_current_user_add and be '
+                         'repeated, but there would be no point.')
+    self._auto_current_user = auto_current_user
+    self._auto_current_user_add = auto_current_user_add
+
+  def _validate(self, value):
+    if not isinstance(value, users.User):
+      raise datastore_errors.BadValueError('Expected User, got %r' %
+                                           (value,))
+
+  def _prepare_for_put(self, entity):
+    if (self._auto_current_user or
+        (self._auto_current_user_add and not self._has_value(entity))):
+      value = users.get_current_user()
+      if value is not None:
+        self._store_value(entity, value)
+
+  def _db_set_value(self, v, p, value):
+    datastore_types.PackUser(p.name(), value, v)
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_uservalue():
+      return None
+    return _unpack_user(v)
+
+
+class KeyProperty(Property):
+  """A Property whose value is a Key object.
+
+  Optional keyword argument: kind=<kind>, to require that keys
+  assigned to this property always have the indicated kind.  May be a
+  string or a Model subclass.
+  """
+
+  _attributes = Property._attributes + ['_kind']
+
+  _kind = None
+
+  @utils.positional(2 + Property._positional)
+  def __init__(self, *args, **kwds):
+    # Support several positional signatures:
+    # ()  =>  name=None, kind from kwds
+    # (None)  =>  name=None, kind from kwds
+    # (name)  =>  name=arg 0, kind from kwds
+    # (kind)  =>  name=None, kind=arg 0
+    # (name, kind)  => name=arg 0, kind=arg 1
+    # (kind, name)  => name=arg 1, kind=arg 0
+    # The positional kind must be a Model subclass; it cannot be a string.
+    name = kind = None
+
+    for arg in args:
+      if isinstance(arg, basestring):
+        if name is not None:
+          raise TypeError('You can only specify one name')
+        name = arg
+      elif isinstance(arg, type) and issubclass(arg, Model):
+        if kind is not None:
+          raise TypeError('You can only specify one kind')
+        kind = arg
+      elif arg is not None:
+        raise TypeError('Unexpected positional argument: %r' % (arg,))
+
+    if name is None:
+      name = kwds.pop('name', None)
+    elif 'name' in kwds:
+      raise TypeError('You can only specify name once')
+
+    if kind is None:
+      kind = kwds.pop('kind', None)
+    elif 'kind' in kwds:
+      raise TypeError('You can only specify kind once')
+
+    if kind is not None:
+      if isinstance(kind, type) and issubclass(kind, Model):
+        kind = kind._get_kind()
+      if isinstance(kind, unicode):
+        kind = kind.encode('utf-8')
+      if not isinstance(kind, str):
+        raise TypeError('kind must be a Model class or a string')
+
+    super(KeyProperty, self).__init__(name, **kwds)
+
+    self._kind = kind
+
+  def _datastore_type(self, value):
+    return datastore_types.Key(value.urlsafe())
+
+  def _validate(self, value):
+    if not isinstance(value, Key):
+      raise datastore_errors.BadValueError('Expected Key, got %r' % (value,))
+    # Reject incomplete keys.
+    if not value.id():
+      raise datastore_errors.BadValueError('Expected complete Key, got %r' %
+                                           (value,))
+    if self._kind is not None:
+      if value.kind() != self._kind:
+        raise datastore_errors.BadValueError(
+          'Expected Key with kind=%r, got %r' % (self._kind, value))
+
+  def _db_set_value(self, v, unused_p, value):
+    if not isinstance(value, Key):
+      raise TypeError('KeyProperty %s can only be set to Key values; '
+                      'received %r' % (self._name, value))
+    # See datastore_types.PackKey
+    ref = value.reference()
+    rv = v.mutable_referencevalue()  # A Reference
+    rv.set_app(ref.app())
+    if ref.has_name_space():
+      rv.set_name_space(ref.name_space())
+    for elem in ref.path().element_list():
+      rv.add_pathelement().CopyFrom(elem)
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_referencevalue():
+      return None
+    ref = entity_pb.Reference()
+    rv = v.referencevalue()
+    if rv.has_app():
+      ref.set_app(rv.app())
+    if rv.has_name_space():
+      ref.set_name_space(rv.name_space())
+    path = ref.mutable_path()
+    for elem in rv.pathelement_list():
+      path.add_element().CopyFrom(elem)
+    return Key(reference=ref)
+
+
+class BlobKeyProperty(Property):
+  """A Property whose value is a BlobKey object."""
+
+  def _validate(self, value):
+    if not isinstance(value, datastore_types.BlobKey):
+      raise datastore_errors.BadValueError('Expected BlobKey, got %r' %
+                                           (value,))
+
+  def _db_set_value(self, v, p, value):
+    if not isinstance(value, datastore_types.BlobKey):
+      raise TypeError('BlobKeyProperty %s can only be set to BlobKey values; '
+                      'received %r' % (self._name, value))
+    p.set_meaning(entity_pb.Property.BLOBKEY)
+    v.set_stringvalue(str(value))
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_stringvalue():
+      return None
+    return datastore_types.BlobKey(v.stringvalue())
+
+
+# The Epoch (a zero POSIX timestamp).
+_EPOCH = datetime.datetime.utcfromtimestamp(0)
+
+class DateTimeProperty(Property):
+  """A Property whose value is a datetime object.
+
+  Note: Unlike Django, auto_now_add can be overridden by setting the
+  value before writing the entity.  And unlike classic db, auto_now
+  does not supply a default value.  Also unlike classic db, when the
+  entity is written, the property values are updated to match what
+  was written.  Finally, beware that this also updates the value in
+  the in-process cache, *and* that auto_now_add may interact weirdly
+  with transaction retries (a retry of a property with auto_now_add
+  set will reuse the value that was set on the first try).
+  """
+
+  _attributes = Property._attributes + ['_auto_now', '_auto_now_add']
+
+  _auto_now = False
+  _auto_now_add = False
+
+  @utils.positional(1 + Property._positional)
+  def __init__(self, name=None, auto_now=False, auto_now_add=False, **kwds):
+    super(DateTimeProperty, self).__init__(name=name, **kwds)
+    # TODO: Disallow combining auto_now* and default?
+    if self._repeated:
+      if auto_now:
+        raise ValueError('DateTimeProperty %s could use auto_now and be '
+                         'repeated, but there would be no point.' % self._name)
+      elif auto_now_add:
+        raise ValueError('DateTimeProperty %s could use auto_now_add and be '
+                         'repeated, but there would be no point.' % self._name)
+    self._auto_now = auto_now
+    self._auto_now_add = auto_now_add
+
+  def _validate(self, value):
+    if not isinstance(value, datetime.datetime):
+      raise datastore_errors.BadValueError('Expected datetime, got %r' %
+                                           (value,))
+
+  def _now(self):
+    return datetime.datetime.now()
+
+  def _prepare_for_put(self, entity):
+    if (self._auto_now or
+        (self._auto_now_add and not self._has_value(entity))):
+      value = self._now()
+      self._store_value(entity, value)
+
+  def _db_set_value(self, v, p, value):
+    if not isinstance(value, datetime.datetime):
+      raise TypeError('DatetimeProperty %s can only be set to datetime values; '
+                      'received %r' % (self._name, value))
+    if value.tzinfo is not None:
+      raise NotImplementedError('DatetimeProperty %s can only support UTC. '
+                                'Please derive a new Property to support '
+                                'alternative timezones.' % self._name)
+    dt = value - _EPOCH
+    ival = dt.microseconds + 1000000 * (dt.seconds + 24 * 3600 * dt.days)
+    v.set_int64value(ival)
+    p.set_meaning(entity_pb.Property.GD_WHEN)
+
+  def _db_get_value(self, v, unused_p):
+    if not v.has_int64value():
+      return None
+    ival = v.int64value()
+    return _EPOCH + datetime.timedelta(microseconds=ival)
+
+
+def _date_to_datetime(value):
+  """Convert a date to a datetime for datastore storage.
+
+  Args:
+    value: A datetime.date object.
+
+  Returns:
+    A datetime object with time set to 0:00.
+  """
+  if not isinstance(value, datetime.date):
+    raise TypeError('Cannot convert to datetime expected date value; '
+                    'received %s' % value)
+  return datetime.datetime(value.year, value.month, value.day)
+
+
+def _time_to_datetime(value):
+  """Convert a time to a datetime for datastore storage.
+
+  Args:
+    value: A datetime.time object.
+
+  Returns:
+    A datetime object with date set to 1970-01-01.
+  """
+  if not isinstance(value, datetime.time):
+    raise TypeError('Cannot convert to datetime expected time value; '
+                    'received %s' % value)
+  return datetime.datetime(1970, 1, 1,
+                           value.hour, value.minute, value.second,
+                           value.microsecond)
+
+
+class DateProperty(DateTimeProperty):
+  """A Property whose value is a date object."""
+
+  def _validate(self, value):
+    if not isinstance(value, datetime.date):
+      raise datastore_errors.BadValueError('Expected date, got %r' %
+                                           (value,))
+
+  def _to_base_type(self, value):
+    assert isinstance(value, datetime.date), repr(value)
+    return _date_to_datetime(value)
+
+  def _from_base_type(self, value):
+    assert isinstance(value, datetime.datetime), repr(value)
+    return value.date()
+
+  def _now(self):
+    return datetime.date.today()
+
+
+class TimeProperty(DateTimeProperty):
+  """A Property whose value is a time object."""
+
+  def _validate(self, value):
+    if not isinstance(value, datetime.time):
+      raise datastore_errors.BadValueError('Expected time, got %r' %
+                                           (value,))
+
+  def _to_base_type(self, value):
+    assert isinstance(value, datetime.time), repr(value)
+    return _time_to_datetime(value)
+
+  def _from_base_type(self, value):
+    assert isinstance(value, datetime.datetime), repr(value)
+    return value.time()
+
+  def _now(self):
+    return datetime.datetime.now().time()
+
+
+class _StructuredGetForDictMixin(Property):
+  """Mixin class so *StructuredProperty can share _get_for_dict().
+
+  The behavior here is that sub-entities are converted to dictionaries
+  by calling to_dict() on them (also doing the right thing for
+  repeated properties).
+
+  NOTE: Even though the _validate() method in StructuredProperty and
+  LocalStructuredProperty are identical, they cannot be moved into
+  this shared base class.  The reason is subtle: _validate() is not a
+  regular method, but treated specially by _call_to_base_type() and
+  _call_shallow_validation(), and the class where it occurs matters
+  if it also defines _to_base_type().
+  """
+
+  def _get_for_dict(self, entity):
+    value = self._get_value(entity)
+    if self._repeated:
+      value = [v._to_dict() for v in value]
+    elif value is not None:
+      value = value._to_dict()
+    return value
+
+
+class StructuredProperty(_StructuredGetForDictMixin):
+  """A Property whose value is itself an entity.
+
+  The values of the sub-entity are indexed and can be queried.
+
+  See the module docstring for details.
+  """
+
+  _modelclass = None
+
+  _attributes = ['_modelclass'] + Property._attributes
+  _positional = 1 + Property._positional  # Add modelclass as positional arg.
+
+  @utils.positional(1 + _positional)
+  def __init__(self, modelclass, name=None, **kwds):
+    super(StructuredProperty, self).__init__(name=name, **kwds)
+    if self._repeated:
+      if modelclass._has_repeated:
+        raise TypeError('This StructuredProperty cannot use repeated=True '
+                        'because its model class (%s) contains repeated '
+                        'properties (directly or indirectly).' %
+                        modelclass.__name__)
+    self._modelclass = modelclass
+
+  def _get_value(self, entity):
+    """Override _get_value() to *not* raise UnprojectedPropertyError."""
+    value = self._get_user_value(entity)
+    if value is None and entity._projection:
+      # Invoke super _get_value() to raise the proper exception.
+      return super(StructuredProperty, self)._get_value(entity)
+    return value
+
+  def __getattr__(self, attrname):
+    """Dynamically get a subproperty."""
+    # Optimistically try to use the dict key.
+    prop = self._modelclass._properties.get(attrname)
+    # We're done if we have a hit and _code_name matches.
+    if prop is None or prop._code_name != attrname:
+      # Otherwise, use linear search looking for a matching _code_name.
+      for prop in self._modelclass._properties.values():
+        if prop._code_name == attrname:
+          break
+      else:
+        # This is executed when we never execute the above break.
+        prop = None
+    if prop is None:
+      raise AttributeError('Model subclass %s has no attribute %s' %
+                           (self._modelclass.__name__, attrname))
+    prop_copy = copy.copy(prop)
+    prop_copy._name = self._name + '.' + prop_copy._name
+    # Cache the outcome, so subsequent requests for the same attribute
+    # name will get the copied property directly rather than going
+    # through the above motions all over again.
+    setattr(self, attrname, prop_copy)
+    return prop_copy
+
+  def _comparison(self, op, value):
+    if op != '=':
+      raise datastore_errors.BadFilterError(
+        'StructuredProperty filter can only use ==')
+    if not self._indexed:
+      raise datastore_errors.BadFilterError(
+        'Cannot query for unindexed StructuredProperty %s' % self._name)
+    # Import late to avoid circular imports.
+    from .query import ConjunctionNode, PostFilterNode
+    from .query import RepeatedStructuredPropertyPredicate
+    if value is None:
+      from .query import FilterNode  # Import late to avoid circular imports.
+      return FilterNode(self._name, op, value)
+    value = self._do_validate(value)
+    value = self._call_to_base_type(value)
+    filters = []
+    match_keys = []
+    # TODO: Why not just iterate over value._values?
+    for prop in self._modelclass._properties.itervalues():
+      vals = prop._get_base_value_unwrapped_as_list(value)
+      if prop._repeated:
+        if vals:
+          raise datastore_errors.BadFilterError(
+            'Cannot query for non-empty repeated property %s' % prop._name)
+        continue
+      assert isinstance(vals, list) and len(vals) == 1, repr(vals)
+      val = vals[0]
+      if val is not None:
+        altprop = getattr(self, prop._code_name)
+        filt = altprop._comparison(op, val)
+        filters.append(filt)
+        match_keys.append(altprop._name)
+    if not filters:
+      raise datastore_errors.BadFilterError(
+        'StructuredProperty filter without any values')
+    if len(filters) == 1:
+      return filters[0]
+    if self._repeated:
+      pb = value._to_pb(allow_partial=True)
+      pred = RepeatedStructuredPropertyPredicate(match_keys, pb,
+                                                 self._name + '.')
+      filters.append(PostFilterNode(pred))
+    return ConjunctionNode(*filters)
+
+  def _IN(self, value):
+    if not isinstance(value, (list, tuple, set, frozenset)):
+      raise datastore_errors.BadArgumentError(
+        'Expected list, tuple or set, got %r' % (value,))
+    from .query import DisjunctionNode, FalseNode
+    # Expand to a series of == filters.
+    filters = [self._comparison('=', val) for val in value]
+    if not filters:
+      # DisjunctionNode doesn't like an empty list of filters.
+      # Running the query will still fail, but this matches the
+      # behavior of IN for regular properties.
+      return FalseNode()
+    else:
+      return DisjunctionNode(*filters)
+  IN = _IN
+
+  def _validate(self, value):
+    if isinstance(value, dict):
+      # A dict is assumed to be the result of a _to_dict() call.
+      return self._modelclass(**value)
+    if not isinstance(value, self._modelclass):
+      raise datastore_errors.BadValueError('Expected %s instance, got %r' %
+                                           (self._modelclass.__name__, value))
+
+  def _has_value(self, entity, rest=None):
+    # rest: optional list of attribute names to check in addition.
+    # Basically, prop._has_value(self, ent, ['x', 'y']) is similar to
+    #   (prop._has_value(ent) and
+    #    prop.x._has_value(ent.x) and
+    #    prop.x.y._has_value(ent.x.y))
+    # assuming prop.x and prop.x.y exist.
+    # NOTE: This is not particularly efficient if len(rest) > 1,
+    # but that seems a rare case, so for now I don't care.
+    ok = super(StructuredProperty, self)._has_value(entity)
+    if ok and rest:
+      lst = self._get_base_value_unwrapped_as_list(entity)
+      if len(lst) != 1:
+        raise RuntimeError('Failed to retrieve sub-entity of StructuredProperty'
+                           ' %s' % self._name)
+      subent = lst[0]
+      if subent is None:
+        return True
+      subprop = subent._properties.get(rest[0])
+      if subprop is None:
+        ok = False
+      else:
+        ok = subprop._has_value(subent, rest[1:])
+    return ok
+
+  def _serialize(self, entity, pb, prefix='', parent_repeated=False):
+    # entity -> pb; pb is an EntityProto message
+    values = self._get_base_value_unwrapped_as_list(entity)
+    for value in values:
+      if value is not None:
+        # TODO: Avoid re-sorting for repeated values.
+        for unused_name, prop in sorted(value._properties.iteritems()):
+          prop._serialize(value, pb, prefix + self._name + '.',
+                          self._repeated or parent_repeated)
+      else:
+        # Serialize a single None
+        super(StructuredProperty, self)._serialize(
+          entity, pb, prefix=prefix, parent_repeated=parent_repeated)
+
+  def _deserialize(self, entity, p, depth=1):
+    if not self._repeated:
+      subentity = self._retrieve_value(entity)
+      if subentity is None:
+        subentity = self._modelclass()
+        self._store_value(entity, _BaseValue(subentity))
+      cls = self._modelclass
+      if isinstance(subentity, _BaseValue):
+        # NOTE: It may not be a _BaseValue when we're deserializing a
+        # repeated structured property.
+        subentity = subentity.b_val
+      if not isinstance(subentity, cls):
+        raise RuntimeError('Cannot deserialize StructuredProperty %s; value '
+                           'retrieved not a %s instance %r' %
+                           (self._name, cls.__name__, subentity))
+      prop = subentity._get_property_for(p, depth=depth)
+      if prop is None:
+        # Special case: kill subentity after all.
+        self._store_value(entity, None)
+        return
+      prop._deserialize(subentity, p, depth + 1)
+      return
+
+    # The repeated case is more complicated.
+    # TODO: Prove we won't get here for orphans.
+    name = p.name()
+    parts = name.split('.')
+    if len(parts) <= depth:
+      raise RuntimeError('StructuredProperty %s expected to find properties '
+                         'separated by periods at a depth of %i; received %r' %
+                         (self._name, depth, parts))
+    next = parts[depth]
+    rest = parts[depth + 1:]
+    prop = self._modelclass._properties.get(next)
+    prop_is_fake = False
+    if prop is None:
+      # Synthesize a fake property.  (We can't use Model._fake_property()
+      # because we need the property before we can determine the subentity.)
+      if rest:
+        # TODO: Handle this case, too.
+        logging.warn('Skipping unknown structured subproperty (%s) '
+                     'in repeated structured property (%s of %s)',
+                     name, self._name, entity.__class__.__name__)
+        return
+      # TODO: Figure out the value for indexed.  Unfortunately we'd
+      # need this passed in from _from_pb(), which would mean a
+      # signature change for _deserialize(), which might break valid
+      # end-user code that overrides it.
+      compressed = p.meaning_uri() == _MEANING_URI_COMPRESSED
+      prop = GenericProperty(next, compressed=compressed)
+      prop._code_name = next
+      prop_is_fake = True
+
+    values = self._get_base_value_unwrapped_as_list(entity)
+    # Find the first subentity that doesn't have a value for this
+    # property yet.
+    for sub in values:
+      if not isinstance(sub, self._modelclass):
+        raise TypeError('sub-entities must be instances of their Model class.')
+      if not prop._has_value(sub, rest):
+        subentity = sub
         break
     else:
-      self.assert_(False, "name_lower not found in PB")
-
-    m = ComputedTest._from_pb(pb)
-    self.assertEqual(m.name, 'Foobar')
-    self.assertEqual(m.name_lower, 'foobar')
-    self.assertEqual(m.length, 6)
-    self.assertEqual(m.computed_hash, hash('Foobar'))
-
-    self.assertRaises(model.ComputedPropertyError, m.__delattr__, 'name_lower')
-    try:
-      del m.name_lower
-    except model.ComputedPropertyError:
-      pass
-    else:
-      self.fail('A ComputedProperty cannot be deleted.')
-
-    func = lambda unused_ent: None
-    self.assertRaises(TypeError, model.ComputedProperty, func,
-                      choices=('foo', 'bar'))
-    self.assertRaises(TypeError, model.ComputedProperty, func, default='foo')
-    self.assertRaises(TypeError, model.ComputedProperty, func, required=True)
-    self.assertRaises(TypeError, model.ComputedProperty, func, validator=func)
-
-  def testComputedPropertyRepeated(self):
-    class StopWatch(model.Model):
-      start = model.IntegerProperty()
-      end = model.IntegerProperty()
-      cp = model.ComputedProperty(lambda self: range(self.start, self.end),
-                                   repeated=True)
-    e = StopWatch(start=1, end=10)
-    self.assertEqual(e.cp, [1, 2, 3, 4, 5, 6, 7, 8, 9])
-    k = e.put()
-    self.assertEqual(k.get().cp, [1, 2, 3, 4, 5, 6, 7, 8, 9])
-
-    # Check that the computed property works when retrieved without cache
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(False)
-    ctx.set_memcache_policy(False)
-    self.assertEqual(k.get().cp, [1, 2, 3, 4, 5, 6, 7, 8, 9])
-
-  def testComputedPropertyInRepeatedStructuredProperty(self):
-    class Inner(model.Model):
-      arg = model.IntegerProperty()
-      comp1 = model.ComputedProperty(lambda ent: 1)
-      comp2 = model.ComputedProperty(lambda ent: 2)
-    class Outer(model.Model):
-      wrap = model.StructuredProperty(Inner, repeated=True)
-    orig = Outer(wrap=[Inner(arg=1), Inner(arg=2)])
-    key = orig.put()
-    copy = Outer.query().get()
-    self.assertEqual(copy, orig)
-
-  def testLargeValues(self):
-    class Demo(model.Model):
-      bytes = model.BlobProperty()
-      text = model.TextProperty()
-    x = Demo(bytes='x'*1000, text=u'a'*1000)
-    key = x.put()
-    y = key.get()
-    self.assertEqual(x, y)
-    self.assertTrue(isinstance(y.bytes, str))
-    self.assertTrue(isinstance(y.text, unicode))
-
-  def testMultipleStructuredPropertyDatastore(self):
-    class Address(model.Model):
-      label = model.StringProperty()
-      text = model.StringProperty()
-    class Person(model.Model):
-      name = model.StringProperty()
-      address = model.StructuredProperty(Address, repeated=True)
-
-    m = Person(name='Google',
-               address=[Address(label='work', text='San Francisco'),
-                        Address(label='home', text='Mountain View')])
-    m.key = model.Key(flat=['Person', None])
-    self.assertEqual(m.address[0].label, 'work')
-    self.assertEqual(m.address[0].text, 'San Francisco')
-    self.assertEqual(m.address[1].label, 'home')
-    self.assertEqual(m.address[1].text, 'Mountain View')
-    [k] = self.conn.put([m])
-    m.key = k  # Connection.put() doesn't do this!
-    [m2] = self.conn.get([k])
-    self.assertEqual(m2, m)
-
-  def testIdAndParentPut(self):
-    # id
-    m = model.Model(id='bar')
-    self.assertEqual(m.put(), model.Key('Model', 'bar'))
-
-    # id + parent
-    p = model.Key('ParentModel', 'foo')
-    m = model.Model(id='bar', parent=p)
-    self.assertEqual(m.put(), model.Key('ParentModel', 'foo', 'Model', 'bar'))
-
-    # parent without id
-    p = model.Key('ParentModel', 'foo')
-    m = model.Model(parent=p)
-    m.put()
-    self.assertTrue(m.key.id())
-
-  def testAllocateIds(self):
-    class MyModel(model.Model):
-      pass
-
-    res = MyModel.allocate_ids(size=100)
-    self.assertEqual(res, (1, 100))
-
-    # with parent
-    key = model.Key(flat=(MyModel._get_kind(), 1))
-    res = MyModel.allocate_ids(size=200, parent=key)
-    self.assertEqual(res, (101, 300))
-
-  def testGetOrInsert(self):
-    class MyModel(model.Model):
-      text = model.StringProperty()
-
-    key = model.Key(flat=(MyModel._get_kind(), 'baz'))
-    self.assertEqual(key.get(), None)
-
-    MyModel.get_or_insert('baz', text='baz')
-    self.assertNotEqual(key.get(), None)
-    self.assertEqual(key.get().text, 'baz')
-
-  def testGetOrInsertAsync(self):
-    class Mod(model.Model):
-      data = model.StringProperty()
-    @tasklets.tasklet
-    def foo():
-      ent = yield Mod.get_or_insert_async('a', data='hello')
-      self.assertTrue(isinstance(ent, Mod))
-      ent2 = yield Mod.get_or_insert_async('a', data='hello')
-      self.assertEqual(ent2, ent)
-    foo().check_success()
-
-  def testGetOrInsertAsyncWithParent(self):
-    class Mod(model.Model):
-      data = model.StringProperty()
-    @tasklets.tasklet
-    def foo():
-      parent = model.Key(flat=('Foo', 1))
-      ent = yield Mod.get_or_insert_async('a', _parent=parent, data='hello')
-      self.assertTrue(isinstance(ent, Mod))
-      ent2 = yield Mod.get_or_insert_async('a', parent=parent, data='hello')
-      self.assertEqual(ent2, ent)
-    foo().check_success()
-
-  def testGetOrInsertAsyncInTransaction(self):
-    class Mod(model.Model):
-      data = model.StringProperty()
-
-    def txn():
-      ent = Mod.get_or_insert('a', data='hola')
-      self.assertTrue(isinstance(ent, Mod))
-      ent2 = Mod.get_or_insert('a', data='hola2')
-      self.assertEqual(ent2, ent)
-      self.assertTrue(ent2 is ent)
-      raise model.Rollback()
-
-    # First with caching turned off.  (This works because the
-    # transactional context always starts out with caching turned on.)
-    model.transaction(txn)
-    self.assertEqual(Mod.query().get(), None)
-
-    # And again with caching turned on.
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(None)  # Restore default cache policy.
-    model.transaction(txn)
-    self.assertEqual(Mod.query().get(), None)
-
-  def testGetOrInsertAsyncInTransactionUncacheableModel(self):
-    class Mod(model.Model):
-      _use_cache = False
-      data = model.StringProperty()
-
-    def txn():
-      ent = Mod.get_or_insert('a', data='hola')
-      self.assertTrue(isinstance(ent, Mod))
-      ent2 = Mod.get_or_insert('a', data='hola2')
-      self.assertEqual(ent2.data, 'hola2')
-      raise model.Rollback()
-
-    # First with caching turned off.
-    model.transaction(txn)
-    self.assertEqual(Mod.query().get(), None)
-
-    # And again with caching turned on.
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(None)  # Restore default cache policy.
-    model.transaction(txn)
-    self.assertEqual(Mod.query().get(), None)
-
-  def testGetById(self):
-    class MyModel(model.Model):
-      pass
-
-    kind = MyModel._get_kind()
-
-    # key id
-    ent1 = MyModel(key=model.Key(pairs=[(kind, 1)]))
-    ent1.put()
-    res = MyModel.get_by_id(1)
-    self.assertEqual(res, ent1)
-
-    # key name
-    ent2 = MyModel(key=model.Key(pairs=[(kind, 'foo')]))
-    ent2.put()
-    res = MyModel.get_by_id('foo')
-    self.assertEqual(res, ent2)
-
-    # key id + parent
-    ent3 = MyModel(key=model.Key(pairs=[(kind, 1), (kind, 2)]))
-    ent3.put()
-    res = MyModel.get_by_id(2, parent=model.Key(pairs=[(kind, 1)]))
-    self.assertEqual(res, ent3)
-
-    # key name + parent (positional)
-    ent4 = MyModel(key=model.Key(pairs=[(kind, 1), (kind, 'bar')]))
-    ent4.put()
-    res = MyModel.get_by_id('bar', ent1.key)
-    self.assertEqual(res, ent4)
-
-    # None
-    res = MyModel.get_by_id('idontexist')
-    self.assertEqual(res, None)
-
-    # key id + namespace
-    ent5 = MyModel(key=model.Key(kind, 1, namespace='ns'))
-    ent5.put()
-    res = MyModel.get_by_id(1, namespace='ns')
-    self.assertEqual(res, ent5)
-
-    # Invalid parent
-    self.assertRaises(datastore_errors.BadValueError, MyModel.get_by_id,
-                      'bar', parent=1)
-
-  def testDelete(self):
-    class MyModel(model.Model):
-      pass
-
-    ent1 = MyModel()
-    key1 = ent1.put()
-    ent2 = key1.get()
-    self.assertEqual(ent1, ent2)
-    key1.delete()
-    ent3 = key1.get()
-    self.assertEqual(ent3, None)
-
-  def testPopulate(self):
-    class MyModel(model.Model):
-      name = model.StringProperty()
-    m = MyModel()
-    m.populate(name='abc')
-    self.assertEqual(m.name, 'abc')
-    m.populate(name='def')
-    self.assertEqual(m.name, 'def')
-    self.assertRaises(AttributeError, m.populate, foo=42)
-
-  def testPopulate_Expando(self):
-    class Ex(model.Expando):
-      name = model.StringProperty()
-    m = Ex()
-    m.populate(name='abc')
-    self.assertEqual(m.name, 'abc')
-    m.populate(foo=42)
-    self.assertEqual(m.foo, 42)
-
-  def testTransaction(self):
-    class MyModel(model.Model):
-      text = model.StringProperty()
-
-    key = model.Key(MyModel, 'babaz')
-    self.assertEqual(key.get(), None)
-
-    def callback():
-      # Emulate get_or_insert()
-      a = key.get()
-      if a is None:
-        a = MyModel(text='baz', key=key)
-        a.put()
-      return a
-
-    b = model.transaction(callback)
-    self.assertNotEqual(b, None)
-    self.assertEqual(b.text, 'baz')
-    self.assertEqual(key.get(), b)
-
-    key = model.Key(MyModel, 'bababaz')
-    self.assertEqual(key.get(), None)
-    c = model.transaction(callback, retries=0)
-    self.assertNotEqual(c, None)
-    self.assertEqual(c.text, 'baz')
-    self.assertEqual(key.get(), c)
-
-  def testNoNestedTransactions(self):
-    self.ExpectWarnings()
-
-    class MyModel(model.Model):
-      text = model.StringProperty()
-
-    key = model.Key(MyModel, 'schtroumpf')
-    self.assertEqual(key.get(), None)
-
-    def inner():
-      self.fail('Should not get here')
-
-    def outer():
-      model.transaction(inner)
-
-    self.assertRaises(datastore_errors.BadRequestError,
-                      model.transaction, outer)
-
-  def testGetMultiAsync(self):
-    model.Model._kind_map['Model'] = model.Model
-    ent1 = model.Model(key=model.Key('Model', 1))
-    ent2 = model.Model(key=model.Key('Model', 2))
-    ent3 = model.Model(key=model.Key('Model', 3))
-    key1 = ent1.put()
-    key2 = ent2.put()
-    key3 = ent3.put()
-
-    @tasklets.tasklet
-    def foo():
-        ents = yield model.get_multi_async([key1, key2, key3])
-        raise tasklets.Return(ents)
-
-    res = foo().get_result()
-    self.assertEqual(res, [ent1, ent2, ent3])
-
-  def testGetMulti(self):
-    model.Model._kind_map['Model'] = model.Model
-    ent1 = model.Model(key=model.Key('Model', 1))
-    ent2 = model.Model(key=model.Key('Model', 2))
-    ent3 = model.Model(key=model.Key('Model', 3))
-    key1 = ent1.put()
-    key2 = ent2.put()
-    key3 = ent3.put()
-
-    res = model.get_multi((key1, key2, key3))
-    self.assertEqual(res, [ent1, ent2, ent3])
-
-  def testPutMultiAsync(self):
-    ent1 = model.Model(key=model.Key('Model', 1))
-    ent2 = model.Model(key=model.Key('Model', 2))
-    ent3 = model.Model(key=model.Key('Model', 3))
-
-    @tasklets.tasklet
-    def foo():
-        ents = yield model.put_multi_async([ent1, ent2, ent3])
-        raise tasklets.Return(ents)
-
-    res = foo().get_result()
-    self.assertEqual(res, [ent1.key, ent2.key, ent3.key])
-
-  def testPutMulti(self):
-    ent1 = model.Model(key=model.Key('Model', 1))
-    ent2 = model.Model(key=model.Key('Model', 2))
-    ent3 = model.Model(key=model.Key('Model', 3))
-
-    res = model.put_multi((ent1, ent2, ent3))
-    self.assertEqual(res, [ent1.key, ent2.key, ent3.key])
-
-  def testDeleteMultiAsync(self):
-    model.Model._kind_map['Model'] = model.Model
-    ent1 = model.Model(key=model.Key('Model', 1))
-    ent2 = model.Model(key=model.Key('Model', 2))
-    ent3 = model.Model(key=model.Key('Model', 3))
-    key1 = ent1.put()
-    key2 = ent2.put()
-    key3 = ent3.put()
-
-    self.assertEqual(key1.get(), ent1)
-    self.assertEqual(key2.get(), ent2)
-    self.assertEqual(key3.get(), ent3)
-
-    @tasklets.tasklet
-    def foo():
-        ents = yield model.delete_multi_async([key1, key2, key3])
-        raise tasklets.Return(ents)
-
-    foo().get_result()
-    self.assertEqual(key1.get(), None)
-    self.assertEqual(key2.get(), None)
-    self.assertEqual(key3.get(), None)
-
-  def testDeleteMulti(self):
-    model.Model._kind_map['Model'] = model.Model
-    ent1 = model.Model(key=model.Key('Model', 1))
-    ent2 = model.Model(key=model.Key('Model', 2))
-    ent3 = model.Model(key=model.Key('Model', 3))
-    key1 = ent1.put()
-    key2 = ent2.put()
-    key3 = ent3.put()
-
-    self.assertEqual(key1.get(), ent1)
-    self.assertEqual(key2.get(), ent2)
-    self.assertEqual(key3.get(), ent3)
-
-    model.delete_multi((key1, key2, key3))
-
-    self.assertEqual(key1.get(), None)
-    self.assertEqual(key2.get(), None)
-    self.assertEqual(key3.get(), None)
-
-  def testContextOptions(self):
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(True)
-    ctx.set_memcache_policy(True)
-    ctx.set_memcache_timeout_policy(0)
-    # Create an entity and put it in the caches.
-    class MyModel(model.Model):
-      name = model.StringProperty()
-    key = model.Key(MyModel, 'yo')
-    ent = MyModel(key=key, name='yo')
-    ent.put(use_memcache=False)  # Don't lock memcache.
-    key.get(use_cache=False)  # Write to memcache.
-    eventloop.run()  # Wait for async memcache request to complete.
-    # Verify that it is in both caches.
-    self.assertTrue(ctx._cache[key] is ent)
-    self.assertEqual(memcache.get(ctx._memcache_prefix + key.urlsafe()),
-                     ent._to_pb(set_key=False).SerializePartialToString())
-    # Get it bypassing the in-process cache.
-    ent_copy = key.get(use_cache=False)
-    self.assertEqual(ent_copy, ent)
-    self.assertFalse(ent_copy is ent)
-    # Put it bypassing both caches.
-    ent_copy.name = 'yoyo'
-    ent_copy.put(use_cache=False, use_memcache=False)
-    # Get it from the in-process cache.
-    ent2 = key.get()
-    self.assertTrue(ent2 is ent)
-    self.assertEqual(ent2.name, 'yo')
-    self.assertEqual(ent_copy.name, 'yoyo')  # Should not have changed.
-    # Get it from memcache.
-    ent3 = key.get(use_cache=False)
-    self.assertFalse(ent3 is ent)
-    self.assertFalse(ent3 is ent2)
-    self.assertEqual(ent3.name, 'yo')
-    self.assertEqual(ent_copy.name, 'yoyo')  # Should not have changed.
-    # Get it from the datastore.
-    ent4 = key.get(use_cache=False, use_memcache=False)
-    self.assertFalse(ent4 is ent)
-    self.assertFalse(ent4 is ent2)
-    self.assertFalse(ent4 is ent3)
-    self.assertFalse(ent4 is ent_copy)
-    self.assertEqual(ent4.name, 'yoyo')
-    # Delete it from the datastore but leave it in the caches.
-    key.delete(use_cache=False, use_memcache=False)
-    # Assure it is gone from the datastore.
-    [ent5] = model.get_multi([key],
-                             use_cache=False, use_memcache=False)
-    self.assertEqual(ent5, None)
-    # Assure it is still in memcache.
-    ent6 = key.get(use_cache=False)
-    self.assertEqual(ent6.name, 'yo')
-    self.assertEqual(memcache.get(ctx._memcache_prefix + key.urlsafe()),
-                     ent._to_pb(set_key=False).SerializePartialToString())
-    # Assure it is still in the in-memory cache.
-    ent7 = key.get()
-    self.assertEqual(ent7.name, 'yo')
-    self.assertTrue(ctx._cache[key] is ent7)
-    # Delete it from memcache.
-    model.delete_multi([key], use_cache=False)
-    # Assure it is gone from memcache.
-    ent8 = key.get(use_cache=False)
-    self.assertEqual(ent8, None)
-    # Assure it is still in the in-memory cache.
-    ent9 = key.get()
-    self.assertEqual(ent9.name, 'yo')
-    self.assertTrue(ctx._cache[key] is ent9)
-    # Delete it from the in-memory cache.
-    key.delete()
-    # Assure it is gone.
-    ent10 = key.get()
-    self.assertEqual(ent10, None)
-
-  def testContextOptions_Timeouts(self):
-    # Tweak the context.
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(True)
-    ctx.set_memcache_policy(True)
-    ctx.set_memcache_timeout_policy(0)
-    # Mock memcache.cas_multi_async().
-    save_memcache_cas_multi_async = ctx._memcache.cas_multi_async
-    memcache_args_log = []
-    def mock_memcache_cas_multi_async(*args, **kwds):
-      memcache_args_log.append((args, kwds))
-      return save_memcache_cas_multi_async(*args, **kwds)
-    # Mock conn.async_put().
-    save_conn_async_put = ctx._conn.async_put
-    conn_args_log = []
-    def mock_conn_async_put(*args, **kwds):
-      conn_args_log.append((args, kwds))
-      return save_conn_async_put(*args, **kwds)
-    # Create some entities.
-    class MyModel(model.Model):
-      name = model.StringProperty()
-    e1 = MyModel(name='1')
-    e2 = MyModel(name='2')
-    e3 = MyModel(name='3')
-    e4 = MyModel(name='4')
-    e5 = MyModel(name='5')
-    # Test that the timeouts make it through to memcache and the datastore.
-    try:
-      ctx._memcache.cas_multi_async = mock_memcache_cas_multi_async
-      ctx._conn.async_put = mock_conn_async_put
-      [f1, f3] = model.put_multi_async([e1, e3],
-                                       memcache_timeout=7,
-                                       deadline=3)
-      [f4] = model.put_multi_async([e4],
-                                   deadline=2)
-      [x2, x5] = model.put_multi([e2, e5],
-                                 memcache_timeout=5)
-      x4 = f4.get_result()
-      x1 = f1.get_result()
-      x3 = f3.get_result()
-      # Write to memcache.
-      model.get_multi([x1, x3], use_cache=False, memcache_timeout=7)
-      model.get_multi([x4], use_cache=False)
-      model.get_multi([x2, x5], use_cache=False, memcache_timeout=5)
-      eventloop.run()  # Wait for async memcache request to complete.
-      # (And there are straggler events too, but they don't matter here.)
-    finally:
-      ctx._memcache.cas_multi_async = save_memcache_cas_multi_async
-      ctx._conn.async_put = save_conn_async_put
-    self.assertEqual([e1.key, e2.key, e3.key, e4.key, e5.key],
-                     [x1, x2, x3, x4, x5])
-    self.assertEqual(len(memcache_args_log), 3, memcache_args_log)
-    timeouts = set(kwds['time'] for _, kwds in memcache_args_log)
-    self.assertEqual(timeouts, set([0, 5, 7]))
-    self.assertEqual(len(conn_args_log), 3)
-    deadlines = set(args[0]._values.get('deadline')
-                    for (args, kwds) in conn_args_log)
-    self.assertEqual(deadlines, set([None, 2, 3]))
-
-  def testContextOptions_ThreeLevels(self):
-    # Reset policies to default.
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(None)
-    ctx.set_memcache_policy(None)
-    ctx.set_memcache_timeout_policy(None)
-
-    class M(model.Model):
-      s = model.StringProperty()
-
-    k = model.Key(M, '1')
-    a = M(s='a', key=k)
-    b = M(s='b', key=k)
-    c = M(s='c', key=k)
-
-    a.put(use_cache=True, use_memcache=False, use_datastore=False)
-    b.put(use_cache=False, use_memcache=True, use_datastore=False)
-    c.put(use_cache=False, use_memcache=False, use_datastore=True)
-
-    self.assertEqual(ctx._cache[k], a)
-    self.assertEqual(memcache.get(ctx._memcache_prefix + k.urlsafe()),
-                     b._to_pb(set_key=False).SerializePartialToString())
-    self.assertEqual(ctx._conn.get([k]), [c])
-
-    self.assertEqual(k.get(), a)
-    self.assertEqual(k.get(use_cache=False), b)
-    self.assertEqual(k.get(use_cache=False, use_memcache=False), c)
-
-    k.delete(use_cache=True, use_memcache=False, use_datastore=False)
-    # Note: it is now in the Context cache marked as deleted.
-    self.assertEqual(k.get(use_cache=False), b)
-    k.delete(use_cache=False, use_memcache=True, use_datastore=False)
-    self.assertEqual(k.get(use_cache=False), c)
-    k.delete(use_cache=False, use_memcache=False, use_datastore=True)
-    self.assertEqual(k.get(use_cache=False), None)
-
-  def testContextOptions_PerClass(self):
-    # Reset policies to default.
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(None)
-    ctx.set_memcache_policy(None)
-    ctx.set_memcache_timeout_policy(None)
-
-    class M(model.Model):
-      s = model.StringProperty()
-      _use_cache = False
-      @classmethod
-      def _use_memcache(cls, key):
-        return bool(key.string_id())
-      @classmethod
-      def _use_datastore(cls, key):
-        return not bool(key.string_id())
-
-    a = M(s='a', key=model.Key(M, 'a'))  # Uses memcache only
-    b = M(s='b', key=model.Key(M, None))  # Uses datastore only
-    a.put()
-    b.put()
-
-    self.assertFalse(a.key in ctx._cache)
-    self.assertFalse(b.key in ctx._cache)
-    self.assertEqual(memcache.get(ctx._memcache_prefix + a.key.urlsafe()),
-                     a._to_pb(set_key=False).SerializePartialToString())
-    self.assertEqual(memcache.get(ctx._memcache_prefix + b.key.urlsafe()), None)
-    self.assertEqual(ctx._conn.get([a.key]), [None])
-    self.assertEqual(ctx._conn.get([b.key]), [b])
-
-  def testNamespaces(self):
-    save_namespace = namespace_manager.get_namespace()
-    try:
-      namespace_manager.set_namespace('ns1')
-      k1 = model.Key('A', 1)
-      self.assertEqual(k1.namespace(), 'ns1')
-      k2 = model.Key('B', 2, namespace='ns2')
-      self.assertEqual(k2.namespace(), 'ns2')
-      namespace_manager.set_namespace('ns3')
-      self.assertEqual(k1.namespace(), 'ns1')
-      k3 = model.Key('C', 3, parent=k1)
-      self.assertEqual(k3.namespace(), 'ns1')
-
-      # Test that namespaces survive serialization
-      namespace_manager.set_namespace('ns2')
-      km = model.Key('M', 1, namespace='ns4')
-      class M(model.Model):
-        keys = model.KeyProperty(repeated=True)
-      m1 = M(keys=[k1, k2, k3], key=km)
-      pb = m1._to_pb()
-      namespace_manager.set_namespace('ns3')
-      m2 = M._from_pb(pb)
-      self.assertEqual(m1, m2)
-      self.assertEqual(m2.keys[0].namespace(), 'ns1')
-      self.assertEqual(m2.keys[1].namespace(), 'ns2')
-      self.assertEqual(m2.keys[2].namespace(), 'ns1')
-
-      # Now test the same thing for Expando
-      namespace_manager.set_namespace('ns2')
-      ke = model.Key('E', 1)
-      class E(model.Expando):
-        pass
-      e1 = E(keys=[k1, k2, k3], key=ke)
-      pb = e1._to_pb()
-      namespace_manager.set_namespace('ns3')
-      e2 = E._from_pb(pb)
-      self.assertEqual(e1, e2)
-
-      # Test that an absent namespace always means the empty namespace
-      namespace_manager.set_namespace('')
-      k3 = model.Key('E', 2)
-      e3 = E(key=k3, k=k3)
-      pb = e3._to_pb()
-      namespace_manager.set_namespace('ns4')
-      e4 = E._from_pb(pb)
-      self.assertEqual(e4.key.namespace(), '')
-      self.assertEqual(e4.k.namespace(), '')
-
-    finally:
-      namespace_manager.set_namespace(save_namespace)
-
-  def testOverrideModelKey(self):
-    class MyModel(model.Model):
-      # key, overridden
-      key = model.StringProperty()
-      # aha, here it is!
-      real_key = model.ModelKey()
-
-    class MyExpando(model.Expando):
-      # key, overridden
-      key = model.StringProperty()
-      # aha, here it is!
-      real_key = model.ModelKey()
-
-    m = MyModel()
-    k = model.Key('MyModel', 'foo')
-    m.key = 'bar'
-    m.real_key = k
-    m.put()
-
-    res = k.get()
-    self.assertEqual(res, m)
-    self.assertEqual(res.key, 'bar')
-    self.assertEqual(res.real_key, k)
-
-    q = MyModel.query(MyModel.real_key == k)
-    res = q.get()
-    self.assertEqual(res, m)
-    self.assertEqual(res.key, 'bar')
-    self.assertEqual(res.real_key, k)
-
-    m = MyExpando()
-    k = model.Key('MyExpando', 'foo')
-    m.key = 'bar'
-    m.real_key = k
-    m.put()
-
-    res = k.get()
-    self.assertEqual(res, m)
-    self.assertEqual(res.key, 'bar')
-    self.assertEqual(res.real_key, k)
-
-    q = MyExpando.query(MyModel.real_key == k)
-    res = q.get()
-    self.assertEqual(res, m)
-    self.assertEqual(res.key, 'bar')
-    self.assertEqual(res.real_key, k)
-
-  def testTransactionalDecorator(self):
-    # This tests @model.transactional and model.in_transaction(), and
-    # indirectly context.Context.in_transaction().
-    logs = []
-    @model.transactional
-    def foo(a, b):
-      self.assertTrue(model.in_transaction())
-      logs.append(tasklets.get_context()._conn)  # White box
-      return a + b
-    @model.transactional
-    def bar(a):
-      self.assertTrue(model.in_transaction())
-      logs.append(tasklets.get_context()._conn)  # White box
-      return foo(a, 42)
-    before = tasklets.get_context()._conn
-    self.assertFalse(model.in_transaction())
-    x = bar(100)
-    self.assertFalse(model.in_transaction())
-    after = tasklets.get_context()._conn
-    self.assertEqual(before, after)
-    self.assertEqual(x, 142)
-    self.assertEqual(len(logs), 2)
-    self.assertEqual(logs[0], logs[1])
-    self.assertNotEqual(before, logs[0])
-
-  def testTransactionalDecoratorExtensions(self):
-    # Test that @transactional(flag=value, ...) works too.
-    @model.transactional()
-    def callback1(log):
-      self.assertTrue(model.in_transaction())
-      ctx = tasklets.get_context()
-      orig_async_commit = ctx._conn.async_commit
-      def wrap_async_commit(options):
-        log.append(options)
-        return orig_async_commit(options)
-      ctx._conn.async_commit = wrap_async_commit
-    log = []
-    callback1(log)
-    self.assertEqual(
-      log,
-      [context.TransactionOptions(propagation=
-                                  context.TransactionOptions.ALLOWED)])
-
-    @model.transactional(retries=42)
-    def callback2(log):
-      self.assertTrue(model.in_transaction())
-      ctx = tasklets.get_context()
-      orig_async_commit = ctx._conn.async_commit
-      def wrap_async_commit(options):
-        log.append(options)
-        return orig_async_commit(options)
-      ctx._conn.async_commit = wrap_async_commit
-    log = []
-    callback2(log)
-    self.assertEqual(len(log), 1)
-    self.assertEqual(log[0].retries, 42)
-
-    @model.transactional(retries=2)
-    def callback3():
-      self.assertTrue(model.in_transaction())
-      ctx = tasklets.get_context()
-      orig_async_commit = ctx._conn.async_commit
-      def wrap_async_commit(options):
-        log.append(options)
-        return orig_async_commit(options)
-      ctx._conn.async_commit = wrap_async_commit
-    log = []
-    callback3()
-    self.assertEqual(len(log), 1)
-    self.assertEqual(log[0].retries, 2)
-
-  def testTransactionalDecoratorPropagationOptions(self):
-    # Test @transactional(propagation=<flag>) for all supported <flag>
-    # values and in_transaction() states.
-    self.ExpectWarnings()
-    class Counter(model.Model):
-      count = model.IntegerProperty(default=0)
-    def increment(key, delta=1):
-      ctx = tasklets.get_context()
-      ent = key.get()
-      if ent is None:
-        ent = Counter(count=delta, key=key)
-      else:
-        ent.count += delta
-      ent.put()
-      return (ent.key, ctx)
-
-    # *** Not currently in a transaction. ***
-    octx = tasklets.get_context()
-    self.assertFalse(octx.in_transaction())
-    key = model.Key(Counter, 'a')
-    # Undecorated -- runs in current context
-    nkey, nctx = increment(key)
-    self.assertTrue(nctx is octx)
-    self.assertEqual(nkey, key)
-    self.assertEqual(key.get().count, 1)
-    # propagation=NESTED -- creates new transaction
-    flag = context.TransactionOptions.NESTED
-    nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-    self.assertTrue(nctx is not octx)
-    self.assertTrue(nctx.in_transaction())
-    self.assertEqual(nkey, key)
-    self.assertEqual(nkey.get().count, 2)
-    # propagation=MANDATORY -- error
-    flag = context.TransactionOptions.MANDATORY
-    self.assertRaises(datastore_errors.BadRequestError,
-                      model.transactional(propagation=flag)(increment), key)
-    # propagation=ALLOWED -- creates new transaction
-    flag = context.TransactionOptions.ALLOWED
-    nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-    self.assertTrue(nctx is not octx)
-    self.assertTrue(nctx.in_transaction())
-    self.assertEqual(nkey, key)
-    self.assertEqual(nkey.get().count, 3)
-    # propagation=INDEPENDENT -- creates new transaction
-    flag = context.TransactionOptions.INDEPENDENT
-    nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-    self.assertTrue(nctx is not octx)
-    self.assertTrue(nctx.in_transaction())
-    self.assertEqual(nkey, key)
-    self.assertEqual(nkey.get().count, 4)
-    # propagation=None -- creates new transaction
-    flag = None
-    nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-    self.assertTrue(nctx is not octx)
-    self.assertTrue(nctx.in_transaction())
-    self.assertEqual(nkey, key)
-    self.assertEqual(nkey.get().count, 5)
-    # propagation not set -- creates new transaction
-    nkey, nctx = model.transactional()(increment)(key)
-    self.assertTrue(nctx is not octx)
-    self.assertTrue(nctx.in_transaction())
-    self.assertEqual(nkey, key)
-    self.assertEqual(nkey.get().count, 6)
-
-    # *** Currently in a transaction. ***
-    def callback():
-      octx = tasklets.get_context()
-      self.assertTrue(octx.in_transaction())
-      key = model.Key(Counter, 'b')
-      # Undecorated -- runs in current context
-      nkey, nctx = increment(key)
-      self.assertTrue(nctx is octx)
-      self.assertEqual(nkey, key)
-      self.assertEqual(key.get().count, 1)
-      # propagation=NESTED -- error
-      flag = context.TransactionOptions.NESTED
-      self.assertRaises(datastore_errors.BadRequestError,
-                        model.transactional(propagation=flag)(increment), key)
-      # propagation=MANDATORY -- runs in current context
-      flag = context.TransactionOptions.MANDATORY
-      nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-      self.assertTrue(nctx is octx)
-      self.assertEqual(nkey, key)
-      self.assertEqual(nkey.get().count, 2)
-      # propagation=ALLOWED -- runs in current context
-      flag = context.TransactionOptions.ALLOWED
-      nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-      self.assertTrue(nctx is octx)
-      self.assertEqual(nkey, key)
-      self.assertEqual(nkey.get().count, 3)
-      # propagation=INDEPENDENT -- creates new transaction
-      flag = context.TransactionOptions.INDEPENDENT
-      nkey, nctx = model.transactional(propagation=flag)(increment)(key)
-      self.assertTrue(nctx is not octx)
-      self.assertTrue(nctx.in_transaction())
-      self.assertEqual(nkey, key)
-      # Interesting!  The current transaction doesn't see the update
-      self.assertEqual(nkey.get().count, 3)
-      # Outside the transaction it's up to 1
-      get_count = model.non_transactional(lambda: nkey.get().count)
-      self.assertEqual(get_count(), 1)
-      # propagation=None -- implies NESTED, raises an error
-      flag = None
-      self.assertRaises(datastore_errors.BadRequestError,
-                        model.transactional(propagation=flag)(increment), key)
-      # propagation not set -- implies ALLOWED, runs in current context
-      nkey, nctx = model.transactional()(increment)(key)
-      self.assertTrue(nctx is octx)
-      self.assertEqual(nkey, key)
-      self.assertEqual(nkey.get().count, 4)
-      # Raise a unique exception so the outer test code can tell we
-      # made it all the way here.
-      raise ZeroDivisionError
-
-    # Run the callback in a transaction.  It should reach the end and
-    # then raise ZeroDivisionError.
-    self.assertRaises(ZeroDivisionError, model.transaction, callback)
-    # One independent transaction has bumped the count.
-    self.assertEqual(model.Key(Counter, 'b').get().count, 1)
-
-  def testNonTransactionalDecorator(self):
-    # Test @non_transactional() with all possible formats and all
-    # possible values for allow_existing and in_transaction().
-    self.ExpectWarnings()
-    class Counter(model.Model):
-      count = model.IntegerProperty(default=0)
-    def increment(key, delta=1):
-      ctx = tasklets.get_context()
-      ent = key.get()
-      if ent is None:
-        ent = Counter(count=delta, key=key)
-      else:
-        ent.count += delta
-      ent.put()
-      return (ent.key, ctx)
-
-    # *** Not currently in a transaction. ***
-    octx = tasklets.get_context()
-    self.assertFalse(octx.in_transaction())
-    key = model.Key(Counter, 'x')
-    # Undecorated
-    nkey, nctx = increment(key)
-    self.assertTrue(nctx is octx)
-    self.assertEqual(nkey, key)
-    self.assertEqual(key.get().count, 1)
-    # Vanilla decorated
-    key, nctx = model.non_transactional(increment)(key)
-    self.assertTrue(nctx is octx)
-    self.assertEqual(nkey, key)
-    self.assertEqual(key.get().count, 2)
-    # Decorated without options
-    key, nctx = model.non_transactional()(increment)(key)
-    self.assertTrue(nctx is octx)
-    self.assertEqual(nkey, key)
-    self.assertEqual(key.get().count, 3)
-    # Decorated with allow_existing=True
-    key, nctx = model.non_transactional(allow_existing=True)(increment)(key)
-    self.assertTrue(nctx is octx)
-    self.assertEqual(nkey, key)
-    self.assertEqual(key.get().count, 4)
-    # Decorated with allow_existing=False
-    key, nctx = model.non_transactional(allow_existing=False)(increment)(key)
-    self.assertTrue(nctx is octx)
-    self.assertEqual(nkey, key)
-    self.assertEqual(key.get().count, 5)
-
-    # *** Currently in a transaction. ***
-    def callback():
-      octx = tasklets.get_context()
-      self.assertTrue(octx.in_transaction())
-      key = model.Key(Counter, 'y')
-      # Undecorated -- runs in this context
-      nkey, nctx = increment(key)
-      self.assertTrue(nctx is octx)
-      self.assertEqual(nkey, key)
-      self.assertEqual(key.get().count, 1)
-      # Vanilla decorated -- runs in different context
-      key, nctx = model.non_transactional(increment)(key)
-      self.assertTrue(nctx is not octx)
-      self.assertFalse(nctx.in_transaction())
-      self.assertEqual(nkey, key)
-      self.assertEqual(key.get().count, 1)
-      # Decorated without options -- runs in different context
-      key, nctx = model.non_transactional()(increment)(key)
-      self.assertTrue(nctx is not octx)
-      self.assertFalse(nctx.in_transaction())
-      self.assertEqual(nkey, key)
-      self.assertEqual(key.get().count, 1)
-      # Decorated with allow_existing=True
-      key, nctx = model.non_transactional(allow_existing=True)(increment)(key)
-      self.assertTrue(nctx is not octx)
-      self.assertFalse(nctx.in_transaction())
-      self.assertEqual(key.get().count, 1)
-      # Decorated with allow_existing=False -- raises exception
-      self.assertRaises(
-        datastore_errors.BadRequestError,
-        model.non_transactional(allow_existing=False)(increment),
-        key)
-      # Raise a unique exception so the outer test code can tell we
-      # made it all the way here.
-      raise ZeroDivisionError
-
-    # Run the callback in a transaction.  It should reach the end and
-    # then raise ZeroDivisionError.
-    self.assertRaises(ZeroDivisionError, model.transaction, callback)
-    # Three non-transactional calls have bumped the count.
-    self.assertEqual(model.Key(Counter, 'y').get().count, 3)
-
-  def testPropertyFilters(self):
-    class M(model.Model):
-      dt = model.DateTimeProperty()
-      d = model.DateProperty()
-      t = model.TimeProperty()
-      f = model.FloatProperty()
-      s = model.StringProperty()
-      k = model.KeyProperty()
-      b = model.BooleanProperty()
-      i = model.IntegerProperty()
-      g = model.GeoPtProperty()
-      @model.ComputedProperty
-      def c(self):
-        return self.i + 1
-      u = model.UserProperty()
-
-    values = {
-      'dt': datetime.datetime.now(),
-      'd': datetime.date.today(),
-      't': datetime.datetime.now().time(),
-      'f': 4.2,
-      's': 'foo',
-      'k': model.Key('Foo', 'bar'),
-      'b': False,
-      'i': 42,
-      'g': AMSTERDAM,
-      'u': TESTUSER,
-    }
-
-    m = M(**values)
-    m.put()
-
-    q = M.query(M.dt == values['dt'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.d == values['d'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.t == values['t'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.f == values['f'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.s == values['s'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.k == values['k'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.b == values['b'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.i == values['i'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.g == values['g'])
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.c == values['i'] + 1)
-    self.assertEqual(q.get(), m)
-
-    q = M.query(M.u == values['u'])
-    self.assertEqual(q.get(), m)
-
-  def testNonRepeatedListValue(self):
-    class ReprProperty(model.BlobProperty):
-      def _validate(self, value):
-        # dummy
-        return value
-
-      def _to_base_type(self, value):
-        if not isinstance(value, str):
-          value = value.__repr__()
-        return value
-
-      def _from_base_type(self, value):
-        if isinstance(value, str):
-          value = eval(value)
-        return value
-
-    class M(model.Model):
-      p1 = ReprProperty()
-      p2 = ReprProperty(compressed=True)
-      p3 = ReprProperty(repeated=True)
-      p4 = ReprProperty(compressed=True, repeated=True)
-
-    key1 = model.Key(M, 'test')
-    value = [{'foo': 'bar'}, {'baz': 'ding'}]
-    m1 = M(key=key1, p1=value, p2=value, p3=[value, value], p4=[value, value])
-    m1.put()
-
-    # To test compression and deserialization with untouched properties.
-    m2 = key1.get()
-    m2.put()
-
-    m2 = key1.get()
-    self.assertEqual(m2.p1, value)
-    self.assertEqual(m2.p2, value)
-    self.assertEqual(m2.p3, [value, value])
-    self.assertEqual(m2.p4, [value, value])
-
-    # To test compression and deserialization after properties were accessed.
-    m2.put()
-
-  def testCompressedProperty(self):
-    class M(model.Model):
-      t1 = model.TextProperty()
-      t2 = model.TextProperty(compressed=True)
-      t3 = model.TextProperty(repeated=True)
-      t4 = model.TextProperty(compressed=True, repeated=True)
-      t5 = model.TextProperty()
-      t6 = model.TextProperty(compressed=True)
-      t7 = model.TextProperty(repeated=True)
-      t8 = model.TextProperty(compressed=True, repeated=True)
-      b1 = model.BlobProperty()
-      b2 = model.BlobProperty(compressed=True)
-      b3 = model.BlobProperty(repeated=True)
-      b4 = model.BlobProperty(compressed=True, repeated=True)
-
-    key1 = model.Key(M, 'test')
-    value1 = 'foo bar baz ding'
-    value2 = u'f\xd6\xd6 b\xe4r b\xe4z d\xefng'  # Umlauts on the vowels.
-    m1 = M(key=key1,
-           t1=value1, t2=value1, t3=[value1], t4=[value1],
-           t5=value2, t6=value2, t7=[value2], t8=[value2],
-           b1=value1, b2=value1, b3=[value1], b4=[value1])
-    m1.put()
-
-    # To test compression and deserialization with untouched properties.
-    m2 = key1.get()
-    m2.put()
-
-    m2 = key1.get()
-    self.assertEqual(m2.t1, value1)
-    self.assertEqual(m2.t2, value1)
-    self.assertEqual(m2.t3, [value1])
-    self.assertEqual(m2.t4, [value1])
-    self.assertEqual(m2.t5, value2)
-    self.assertEqual(m2.t6, value2)
-    self.assertEqual(m2.t7, [value2])
-    self.assertEqual(m2.t8, [value2])
-    self.assertEqual(m2.b1, value1)
-    self.assertEqual(m2.b2, value1)
-    self.assertEqual(m2.b3, [value1])
-    self.assertEqual(m2.b4, [value1])
-
-    # To test compression and deserialization after properties were accessed.
-    m2.put()
-
-  def testCompressedProperty_Repr(self):
-    class Foo(model.Model):
-      name = model.StringProperty()
-    class M(model.Model):
-      b = model.BlobProperty(compressed=True)
-      t = model.TextProperty(compressed=True)
-      l = model.LocalStructuredProperty(Foo, compressed=True)
-    x = M(b='b' * 100, t=u't' * 100, l=Foo(name='joe'))
-    x.put()
-    y = x.key.get()
-    self.assertFalse(x is y)
-    self.assertEqual(
-      repr(y),
-      'M(key=Key(\'M\', 1), ' +
-      'b=%r, ' % ('b' * 100) +
-      'l=%r, ' % Foo(name=u'joe') +
-      't=%r)' % (u't' * 100))
-
-  def testCorruption(self):
-    # Thanks to Ricardo Banffy
-    class Evil(model.Model):
-      x = model.IntegerProperty()
-      def __init__(self, *a, **k):
-        super(Evil, self).__init__(*a, **k)
-        self.x = 42
-    e = Evil()
-    e.x = 50
-    pb = e._to_pb()
-    y = Evil._from_pb(pb)
-    self.assertEqual(y.x, 50)
-
-  def testAllocateIdsHooksCalled(self):
-    self.pre_counter = 0
-    self.post_counter = 0
-
-    self.size = 25
-    self.max = None
-    self.parent = key.Key('Foo', 'Bar')
-
-    class HatStand(model.Model):
-      @classmethod
-      def _pre_allocate_ids_hook(cls, size, max, parent):
-        self.pre_counter += 1
-        self.assertEqual(size, self.size)
-        self.assertEqual(max, self.max)
-        self.assertEqual(parent, self.parent)
-      @classmethod
-      def _post_allocate_ids_hook(cls, size, max, parent, future):
-        self.post_counter += 1
-        self.assertEqual(size, self.size)
-        self.assertEqual(max, self.max)
-        self.assertEqual(parent, self.parent)
-        low, high = future.get_result()
-        self.assertEqual(high - low + 1, self.size)
-
-    self.assertEqual(self.pre_counter, 0, 'Pre allocate ids hook called early')
-    future = HatStand.allocate_ids_async(size=self.size, max=self.max,
-                                         parent=self.parent)
-    self.assertEqual(self.pre_counter, 1, 'Pre allocate ids hook not called')
-    self.assertEqual(self.post_counter, 0,
-                     'Post allocate ids hook called early')
-    future.get_result()
-    self.assertEqual(self.post_counter, 1, 'Post allocate ids hook not called')
-
-  def testNoDefaultAllocateIdsCallback(self):
-    # See issue 58.  http://goo.gl/hPN6j
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(False)
-    class EmptyModel(model.Model):
-      pass
-    fut = EmptyModel.allocate_ids_async(1)
-    self.assertFalse(fut._immediate_callbacks,
-                     'Allocate ids hook queued default no-op.')
-
-  def testPutHooksCalled(self):
-    test = self # Closure for inside hooks
-    self.pre_counter = 0
-    self.post_counter = 0
-
-    class HatStand(model.Model):
-      def _pre_put_hook(self):
-        test.pre_counter += 1
-      def _post_put_hook(self, future):
-        test.post_counter += 1
-        test.assertEqual(future.get_result(), test.entity.key)
-
-    furniture = HatStand()
-    self.entity = furniture
-    self.assertEqual(self.pre_counter, 0, 'Pre put hook called early')
-    future = furniture.put_async()
-    self.assertEqual(self.pre_counter, 1, 'Pre put hook not called')
-    self.assertEqual(self.post_counter, 0, 'Post put hook called early')
-    future.get_result()
-    self.assertEqual(self.post_counter, 1, 'Post put hook not called')
-
-    # All counters now read 1, calling put_multi for 10 entities makes this 11
-    new_furniture = [HatStand() for _ in range(10)]
-    multi_future = model.put_multi_async(new_furniture)
-    self.assertEqual(self.pre_counter, 11,
-                     'Pre put hooks not called on put_multi')
-    self.assertEqual(self.post_counter, 1,
-                     'Post put hooks called early on put_multi')
-    for fut, ent in zip(multi_future, new_furniture):
-      self.entity = ent
-      fut.get_result()
-    self.assertEqual(self.post_counter, 11,
-                     'Post put hooks not called on put_multi')
-
-  def testGetByIdHooksCalled(self):
-    # See issue 95.  http://goo.gl/QSRQH
-    # Adapted from testGetHooksCalled in key_test.py.
-    test = self # Closure for inside hook
-    self.pre_counter = 0
-    self.post_counter = 0
-
-    class HatStand(model.Model):
-      @classmethod
-      def _pre_get_hook(cls, key):
-        test.pre_counter += 1
-        if test.pre_counter == 1:  # Cannot test for key in get_multi
-          self.assertEqual(key, self.key)
-      @classmethod
-      def _post_get_hook(cls, key, future):
-        test.post_counter += 1
-        self.assertEqual(key, self.key)
-        self.assertEqual(future.get_result(), self.entity)
-
-    furniture = HatStand()
-    self.entity = furniture
-    key = furniture.put()
-    self.key = key
-    self.assertEqual(self.pre_counter, 0, 'Pre get hook called early')
-    future = HatStand.get_by_id_async(key.id())
-    self.assertEqual(self.pre_counter, 1, 'Pre get hook not called')
-    self.assertEqual(self.post_counter, 0, 'Post get hook called early')
-    future.get_result()
-    self.assertEqual(self.post_counter, 1, 'Post get hook not called')
-
-    # All counters now read 1, calling get for 10 keys should make this 11
-    new_furniture = [HatStand() for _ in range(10)]
-    keys = [furniture.put() for furniture in new_furniture]  # Sequential keys
-    multi_future = [HatStand.get_by_id_async(key.id()) for key in keys]
-    self.assertEqual(self.pre_counter, 11,
-                     'Pre get hooks not called on get_multi')
-    self.assertEqual(self.post_counter, 1,
-                     'Post get hooks called early on get_multi')
-    for fut, key, entity in zip(multi_future, keys, new_furniture):
-      self.key = key
-      self.entity = entity
-      fut.get_result()
-    self.assertEqual(self.post_counter, 11,
-                     'Post get hooks not called on get_multi')
-
-  def testGetOrInsertHooksCalled(self):
-    # See issue 98.  http://goo.gl/7ak2i
-    test = self # Closure for inside hooks
-
-    class HatStand(model.Model):
-      @classmethod
-      def _pre_get_hook(cls, key):
-        test.pre_get_counter += 1
-      @classmethod
-      def _post_get_hook(cls, key, future):
-        test.post_get_counter += 1
-      def _pre_put_hook(self):
-        test.pre_put_counter += 1
-      def _post_put_hook(self, future):
-        test.post_put_counter += 1
-
-    # First call creates it.  This calls get() twice (once outside the
-    # transaction and once inside it) and put() once (from inside the
-    # transaction).
-    self.pre_get_counter = 0
-    self.post_get_counter = 0
-    self.pre_put_counter = 0
-    self.post_put_counter = 0
-    HatStand.get_or_insert('classic')
-    self.assertEqual(self.pre_get_counter, 2)
-    self.assertEqual(self.post_get_counter, 2)
-    self.assertEqual(self.pre_put_counter, 1)
-    self.assertEqual(self.post_put_counter, 1)
-
-    # Second call gets it without needing a transaction.
-    self.pre_get_counter = 0
-    self.post_get_counter = 0
-    self.pre_put_counter = 0
-    self.post_put_counter = 0
-    HatStand.get_or_insert_async('classic').get_result()
-    self.assertEqual(self.pre_get_counter, 1)
-    self.assertEqual(self.post_get_counter, 1)
-    self.assertEqual(self.pre_put_counter, 0)
-    self.assertEqual(self.post_put_counter, 0)
-
-  def testMonkeyPatchHooks(self):
-    test = self # Closure for inside put hooks
-    hook_attr_names = ('_pre_allocate_ids_hook', '_post_allocate_ids_hook',
-                       '_pre_put_hook', '_post_put_hook')
-    original_hooks = {}
-
-    # Backup the original hooks
-    for name in hook_attr_names:
-      original_hooks[name] = getattr(model.Model, name)
-
-    self.pre_allocate_ids_flag = False
-    self.post_allocate_ids_flag = False
-    self.pre_put_flag = False
-    self.post_put_flag = False
-
-    # TODO: Should the unused arguments to Monkey Patched tests be tested?
-    class HatStand(model.Model):
-      @classmethod
-      def _pre_allocate_ids_hook(cls, unused_size, unused_max, unused_parent):
-        self.pre_allocate_ids_flag = True
-      @classmethod
-      def _post_allocate_ids_hook(cls, unused_size, unused_max, unused_parent,
-                                  unused_future):
-        self.post_allocate_ids_flag = True
-      def _pre_put_hook(self):
-        test.pre_put_flag = True
-      def _post_put_hook(self, unused_future):
-        test.post_put_flag = True
-
-    # Monkey patch the hooks
-    for name in hook_attr_names:
-      hook = getattr(HatStand, name)
-      setattr(model.Model, name, hook)
-
-    try:
-      HatStand.allocate_ids(1)
-      self.assertTrue(self.pre_allocate_ids_flag,
-               'Pre allocate ids hook not called when model is monkey patched')
-      self.assertTrue(self.post_allocate_ids_flag,
-              'Post allocate ids hook not called when model is monkey patched')
-      furniture = HatStand()
-      furniture.put()
-      self.assertTrue(self.pre_put_flag,
-                      'Pre put hook not called when model is monkey patched')
-      self.assertTrue(self.post_put_flag,
-                      'Post put hook not called when model is monkey patched')
-    finally:
-      # Restore the original hooks
-      for name in hook_attr_names:
-        setattr(model.Model, name, original_hooks[name])
-
-  def testPreHooksCannotCancelRPC(self):
-    class HatStand(model.Model):
-      @classmethod
-      def _pre_allocate_ids_hook(cls, unused_size, unused_max, unused_parent):
-        raise tasklets.Return()
-      def _pre_put_hook(self):
-        raise tasklets.Return()
-    self.assertRaises(tasklets.Return, HatStand.allocate_ids)
-    entity = HatStand()
-    self.assertRaises(tasklets.Return, entity.put)
-
-  def testNoDefaultPutCallback(self):
-    # See issue 58.  http://goo.gl/hPN6j
-    ctx = tasklets.get_context()
-    ctx.set_cache_policy(False)
-    class EmptyModel(model.Model):
-      pass
-    entity = EmptyModel()
-    fut = entity.put_async()
-    self.assertFalse(fut._immediate_callbacks, 'Put hook queued default no-op.')
-
-  def testKeyValidation(self):
-    # See issue 75.  http://goo.gl/k0Gfv
-    class Foo(model.Model):
-      # Override the default Model method with our own.
-      def _validate_key(self, key):
-        if key.parent() is None:
-          raise TypeError
-        elif key.parent().kind() != 'Foo':
-          raise TypeError
-        elif key.id().startswith('a'):
-          raise ValueError
-        return key
-
-    # Using no arguments
-    self.assertRaises(TypeError, Foo().put)
-
-    # Using id/parent arguments
-    rogue_parent = model.Key('Bar', 1)
-    self.assertRaises(TypeError, Foo, parent=rogue_parent, id='b')
-    parent = model.Key(Foo, 1)
-    self.assertRaises(ValueError, Foo, parent=parent, id='a')
-
-    # Using key argument
-    rogue_key = model.Key(Foo, 1, Foo, 'a')
-    self.assertRaises(ValueError, Foo, key=rogue_key)
-
-    # Using Key assignment
-    entity = Foo()
-    self.assertRaises(ValueError, setattr, entity, 'key', rogue_key)
-
-    # None assignment (including delete) should work correctly
-    entity.key = None
-    self.assertTrue(entity.key is None)
-    del entity.key
-    self.assertTrue(entity.key is None)
-
-    # Sanity check a valid key
-    key = Foo(parent=parent, id='b').put()
-    self.assertEqual(key.parent(), parent)
-    self.assertEqual(key.id(), 'b')
-    self.assertEqual(key.kind(), 'Foo')
-
-  def testExpandoBlobKey(self):
-    class Foo(model.Expando):
-      pass
-    bk = model.BlobKey('blah')
-    foo = Foo(bk=bk)
-    foo.put()
-    bar = foo.key.get(use_memcache=False, use_cache=False)
-    self.assertTrue(isinstance(bar.bk, model.BlobKey))
-    self.assertEqual(bar.bk, bk)
-
-
-class IndexTests(test_utils.NDBTest):
-
-  def create_index(self):
-    ci = datastore_stub_util.datastore_pb.CompositeIndex()
-    ci.set_app_id(os.environ['APPLICATION_ID'])
-    ci.set_id(0)
-    ci.set_state(ci.WRITE_ONLY)
-    index = ci.mutable_definition()
-    index.set_ancestor(0)
-    index.set_entity_type('Kind')
-    property = index.add_property()
-    property.set_name('property1')
-    property.set_direction(property.DESCENDING)
-    property = index.add_property()
-    property.set_name('property2')
-    property.set_direction(property.ASCENDING)
-    stub = self.testbed.get_stub('datastore_v3')
-    stub.CreateIndex(ci)
-
-  def testGetIndexes(self):
-    self.assertEqual([], model.get_indexes())
-
-    self.create_index()
-
-    self.assertEqual(
-      [model.IndexState(
-        definition=model.Index(kind='Kind',
-                               properties=[
-                                 model.IndexProperty(name='property1',
-                                                     direction='desc'),
-                                 model.IndexProperty(name='property2',
-                                                     direction='asc'),
-                                 ],
-                               ancestor=False),
-        state='building',
-        id=1,
-        ),
-       ],
-      model.get_indexes())
-
-  def testGetIndexesAsync(self):
-    fut = model.get_indexes_async()
-    self.assertTrue(isinstance(fut, tasklets.Future))
-    self.assertEqual([], fut.get_result())
-
-    self.create_index()
-
-    self.assertEqual(
-      [model.IndexState(
-        definition=model.Index(kind='Kind',
-                               properties=[
-                                 model.IndexProperty(name='property1',
-                                                     direction='desc'),
-                                 model.IndexProperty(name='property2',
-                                                     direction='asc'),
-                                 ],
-                               ancestor=False),
-        state='building',
-        id=1,
-        ),
-       ],
-      model.get_indexes_async().get_result())
-
-
-class CacheTests(test_utils.NDBTest):
-
-  def SetupContextCache(self):
-    """Set up the context cache.
-
-    We only need cache active when testing the cache, so the default behavior
-    is to disable it to avoid misleading test results. Override this when
-    needed.
+      # We didn't find one.  Add a new one to the underlying list of
+      # values (the list returned by
+      # _get_base_value_unwrapped_as_list() is a copy so we
+      # can't append to it).
+      subentity = self._modelclass()
+      values = self._retrieve_value(entity)
+      values.append(_BaseValue(subentity))
+    if prop_is_fake:
+      # Add the synthetic property to the subentity's _properties
+      # dict, so that it will be correctly deserialized.
+      # (See Model._fake_property() for comparison.)
+      subentity._clone_properties()
+      subentity._properties[prop._name] = prop
+    prop._deserialize(subentity, p, depth + 1)
+
+  def _prepare_for_put(self, entity):
+    values = self._get_base_value_unwrapped_as_list(entity)
+    for value in values:
+      if value is not None:
+        value._prepare_for_put()
+
+  def _check_indexed_property(self, rest=None):
+    """Override for Model._check_indexed_property().
+
+    Raises:
+      InvalidPropertyError if no subproperty is specified or if something
+      is wrong with the subproperty.
     """
-    ctx = tasklets.make_default_context()
-    tasklets.set_context(ctx)
-    ctx.set_cache_policy(True)
-    ctx.set_memcache_policy(True)
+    if not rest:
+      raise InvalidPropertyError(
+        'Structured property %s requires a subproperty' % self._name)
+    self._modelclass._check_indexed_properties([rest])
 
-  def testCachedEntityKeyMatchesGetArg(self):
-    # See issue 13.  http://goo.gl/jxjOP
-    class Employee(model.Model):
-      pass
 
-    e = Employee(key=model.Key(Employee, 'joe'))
-    e.put()
-    e._key = model.Key(Employee, 'fred')
+class LocalStructuredProperty(_StructuredGetForDictMixin, BlobProperty):
+  """Substructure that is serialized to an opaque blob.
 
-    f = model.Key(Employee, 'joe').get()
+  This looks like StructuredProperty on the Python side, but is
+  written like a BlobProperty in the datastore.  It is not indexed
+  and you cannot query for subproperties.  On the other hand, the
+  on-disk representation is more efficient and can be made even more
+  efficient by passing compressed=True, which compresses the blob
+  data using gzip.
+  """
 
-    # Now f is e;
-    # With bug this is True.
-    # self.assertEqual(f.key, model.Key(Employee, 'fred'))
+  _indexed = False
+  _modelclass = None
+  _keep_keys = False
 
-    # Removing key from context cache when it is set to a different one
-    # makes the test correct.
-    self.assertEqual(f.key, model.Key(Employee, 'joe'))
+  _attributes = ['_modelclass'] + BlobProperty._attributes + ['_keep_keys']
+  _positional = 1 + BlobProperty._positional  # Add modelclass as positional.
 
-  def testTransactionalDeleteClearsCache(self):
-    # See issue 57.  http://goo.gl/bXkib
-    class Employee(model.Model):
-      pass
+  @utils.positional(1 + _positional)
+  def __init__(self, modelclass,
+               name=None, compressed=False, keep_keys=False,
+               **kwds):
+    super(LocalStructuredProperty, self).__init__(name=name,
+                                                  compressed=compressed,
+                                                  **kwds)
+    if self._indexed:
+      raise NotImplementedError('Cannot index LocalStructuredProperty %s.' %
+                                self._name)
+    self._modelclass = modelclass
+    self._keep_keys = keep_keys
+
+  def _validate(self, value):
+    if isinstance(value, dict):
+      # A dict is assumed to be the result of a _to_dict() call.
+      return self._modelclass(**value)
+    if not isinstance(value, self._modelclass):
+      raise datastore_errors.BadValueError('Expected %s instance, got %r' %
+                                           (self._modelclass.__name__, value))
+
+  def _to_base_type(self, value):
+    if isinstance(value, self._modelclass):
+      pb = value._to_pb(set_key=self._keep_keys)
+      return pb.SerializePartialToString()
+
+  def _from_base_type(self, value):
+    if not isinstance(value, self._modelclass):
+      pb = entity_pb.EntityProto()
+      pb.MergePartialFromString(value)
+      if not self._keep_keys:
+        pb.clear_key()
+      return self._modelclass._from_pb(pb)
+
+  def _prepare_for_put(self, entity):
+    # TODO: Using _get_user_value() here makes it impossible to
+    # subclass this class and add a _from_base_type().  But using
+    # _get_base_value() won't work, since that would return
+    # the serialized (and possibly compressed) serialized blob.
+    value = self._get_user_value(entity)
+    if value is not None:
+      if self._repeated:
+        for subent in value:
+          subent._prepare_for_put()
+      else:
+        value._prepare_for_put()
+
+  def _db_set_uncompressed_meaning(self, p):
+    p.set_meaning(entity_pb.Property.ENTITY_PROTO)
+
+
+class GenericProperty(Property):
+  """A Property whose value can be (almost) any basic type.
+
+  This is mainly used for Expando and for orphans (values present in
+  the datastore but not represented in the Model subclass) but can
+  also be used explicitly for properties with dynamically-typed
+  values.
+
+  This supports compressed=True, which is only effective for str
+  values (not for unicode), and implies indexed=False.
+  """
+
+  _compressed = False
+
+  _attributes = Property._attributes + ['_compressed']
+
+  @utils.positional(1 + Property._positional)
+  def __init__(self, name=None, compressed=False, **kwds):
+    if compressed:  # Compressed implies unindexed.
+      kwds.setdefault('indexed', False)
+    super(GenericProperty, self).__init__(name=name, **kwds)
+    self._compressed = compressed
+    if compressed and self._indexed:
+      # TODO: Allow this, but only allow == and IN comparisons?
+      raise NotImplementedError('GenericProperty %s cannot be compressed and '
+                                'indexed at the same time.' % self._name)
+
+  def _to_base_type(self, value):
+    if self._compressed and isinstance(value, str):
+      return _CompressedValue(zlib.compress(value))
+
+  def _from_base_type(self, value):
+    if isinstance(value, _CompressedValue):
+      return zlib.decompress(value.z_val)
+
+  def _validate(self, value):
+    if (isinstance(value, basestring) and
+        self._indexed and
+        len(value) > _MAX_STRING_LENGTH):
+      raise datastore_errors.BadValueError(
+        'Indexed value %s must be at most %d bytes' %
+        (self._name, _MAX_STRING_LENGTH))
+
+  def _db_get_value(self, v, p):
+    # This is awkward but there seems to be no faster way to inspect
+    # what union member is present.  datastore_types.FromPropertyPb(),
+    # the undisputed authority, has the same series of if-elif blocks.
+    # (We don't even want to think about multiple members... :-)
+    if v.has_stringvalue():
+      sval = v.stringvalue()
+      meaning = p.meaning()
+      if meaning == entity_pb.Property.BLOBKEY:
+        sval = BlobKey(sval)
+      elif meaning == entity_pb.Property.BLOB:
+        if p.meaning_uri() == _MEANING_URI_COMPRESSED:
+          sval = _CompressedValue(sval)
+      elif meaning == entity_pb.Property.ENTITY_PROTO:
+        # NOTE: This is only used for uncompressed LocalStructuredProperties.
+        pb = entity_pb.EntityProto()
+        pb.MergePartialFromString(sval)
+        modelclass = Expando
+        if pb.key().path().element_size():
+          kind = pb.key().path().element(-1).type()
+          modelclass = Model._kind_map.get(kind, modelclass)
+        sval = modelclass._from_pb(pb)
+      elif meaning != entity_pb.Property.BYTESTRING:
+        try:
+          sval.decode('ascii')
+          # If this passes, don't return unicode.
+        except UnicodeDecodeError:
+          try:
+            sval = unicode(sval.decode('utf-8'))
+          except UnicodeDecodeError:
+            pass
+      return sval
+    elif v.has_int64value():
+      ival = v.int64value()
+      if p.meaning() == entity_pb.Property.GD_WHEN:
+        return _EPOCH + datetime.timedelta(microseconds=ival)
+      return ival
+    elif v.has_booleanvalue():
+      # The booleanvalue field is an int32, so booleanvalue() returns
+      # an int, hence the conversion.
+      return bool(v.booleanvalue())
+    elif v.has_doublevalue():
+      return v.doublevalue()
+    elif v.has_referencevalue():
+      rv = v.referencevalue()
+      app = rv.app()
+      namespace = rv.name_space()
+      pairs = [(elem.type(), elem.id() or elem.name())
+               for elem in rv.pathelement_list()]
+      return Key(pairs=pairs, app=app, namespace=namespace)
+    elif v.has_pointvalue():
+      pv = v.pointvalue()
+      return GeoPt(pv.x(), pv.y())
+    elif v.has_uservalue():
+      return _unpack_user(v)
+    else:
+      # A missing value implies null.
+      return None
+
+  def _db_set_value(self, v, p, value):
+    # TODO: use a dict mapping types to functions
+    if isinstance(value, str):
+      v.set_stringvalue(value)
+      # TODO: Set meaning to BLOB or BYTESTRING if it's not UTF-8?
+      # (Or TEXT if unindexed.)
+    elif isinstance(value, unicode):
+      v.set_stringvalue(value.encode('utf8'))
+      if not self._indexed:
+        p.set_meaning(entity_pb.Property.TEXT)
+    elif isinstance(value, bool):  # Must test before int!
+      v.set_booleanvalue(value)
+    elif isinstance(value, (int, long)):
+      if not (-_MAX_LONG <= value < _MAX_LONG):
+        raise TypeError('Property %s can only accept 64-bit integers; '
+                        'received %s' % value)
+      v.set_int64value(value)
+    elif isinstance(value, float):
+      v.set_doublevalue(value)
+    elif isinstance(value, Key):
+      # See datastore_types.PackKey
+      ref = value.reference()
+      rv = v.mutable_referencevalue()  # A Reference
+      rv.set_app(ref.app())
+      if ref.has_name_space():
+        rv.set_name_space(ref.name_space())
+      for elem in ref.path().element_list():
+        rv.add_pathelement().CopyFrom(elem)
+    elif isinstance(value, datetime.datetime):
+      if value.tzinfo is not None:
+        raise NotImplementedError('Property %s can only support the UTC. '
+                                  'Please derive a new Property to support '
+                                  'alternative timezones.' % self._name)
+      dt = value - _EPOCH
+      ival = dt.microseconds + 1000000 * (dt.seconds + 24 * 3600 * dt.days)
+      v.set_int64value(ival)
+      p.set_meaning(entity_pb.Property.GD_WHEN)
+    elif isinstance(value, GeoPt):
+      pv = v.mutable_pointvalue()
+      pv.set_x(value.lat)
+      pv.set_y(value.lon)
+    elif isinstance(value, users.User):
+      datastore_types.PackUser(p.name(), value, v)
+    elif isinstance(value, BlobKey):
+      v.set_stringvalue(str(value))
+      p.set_meaning(entity_pb.Property.BLOBKEY)
+    elif isinstance(value, Model):
+      set_key = value._key is not None
+      pb = value._to_pb(set_key=set_key)
+      value = pb.SerializePartialToString()
+      v.set_stringvalue(value)
+      p.set_meaning(entity_pb.Property.ENTITY_PROTO)
+    elif isinstance(value, _CompressedValue):
+      value = value.z_val
+      v.set_stringvalue(value)
+      p.set_meaning_uri(_MEANING_URI_COMPRESSED)
+      p.set_meaning(entity_pb.Property.BLOB)
+    else:
+      raise NotImplementedError('Property %s does not support %s types.' %
+                                (self._name, type(value)))
+
+
+class ComputedProperty(GenericProperty):
+  """A Property whose value is determined by a user-supplied function.
+
+  Computed properties cannot be set directly, but are instead generated by a
+  function when required. They are useful to provide fields in the datastore
+  that can be used for filtering or sorting without having to manually set the
+  value in code - for example, sorting on the length of a BlobProperty, or
+  using an equality filter to check if another field is not empty.
+
+  ComputedProperty can be declared as a regular property, passing a function as
+  the first argument, or it can be used as a decorator for the function that
+  does the calculation.
+
+  Example:
+
+  >>> class DatastoreFile(Model):
+  ...   name = StringProperty()
+  ...   name_lower = ComputedProperty(lambda self: self.name.lower())
+  ...
+  ...   data = BlobProperty()
+  ...
+  ...   @ComputedProperty
+  ...   def size(self):
+  ...     return len(self.data)
+  ...
+  ...   def _compute_hash(self):
+  ...     return hashlib.sha1(self.data).hexdigest()
+  ...   hash = ComputedProperty(_compute_hash, name='sha1')
+  """
+
+  def __init__(self, func, name=None, indexed=None, repeated=None):
+    """Constructor.
+
+    Args:
+      func: A function that takes one argument, the model instance, and returns
+            a calculated value.
+    """
+    super(ComputedProperty, self).__init__(name=name, indexed=indexed,
+                                           repeated=repeated)
+    self._func = func
+
+  def _set_value(self, entity, value):
+    raise ComputedPropertyError("Cannot assign to a ComputedProperty")
+
+  def _delete_value(self, entity):
+    raise ComputedPropertyError("Cannot delete a ComputedProperty")
+
+  def _get_value(self, entity):
+    # About projections and computed properties: if the computed
+    # property itself is in the projection, don't recompute it; this
+    # prevents raising UnprojectedPropertyError if one of the
+    # dependents is not in the projection.  However, if the computed
+    # property is not in the projection, compute it normally -- its
+    # dependents may all be in the projection, and it may be useful to
+    # access the computed value without having it in the projection.
+    # In this case, if any of the dependents is not in the projection,
+    # accessing it in the computation function will raise
+    # UnprojectedPropertyError which will just bubble up.
+    if entity._projection and self._name in entity._projection:
+      return super(ComputedProperty, self)._get_value(entity)
+    value = self._func(entity)
+    self._store_value(entity, value)
+    return value
+
+  def _prepare_for_put(self, entity):
+    self._get_value(entity)  # For its side effects.
+
+
+class MetaModel(type):
+  """Metaclass for Model.
+
+  This exists to fix up the properties -- they need to know their name.
+  This is accomplished by calling the class's _fix_properties() method.
+  """
+
+  def __init__(cls, name, bases, classdict):
+    super(MetaModel, cls).__init__(name, bases, classdict)
+    cls._fix_up_properties()
+
+  def __repr__(cls):
+    props = []
+    for _, prop in sorted(cls._properties.iteritems()):
+      props.append('%s=%r' % (prop._code_name, prop))
+    return '%s<%s>' % (cls.__name__, ', '.join(props))
+
+
+class Model(_NotEqualMixin):
+  """A class describing datastore entities.
+
+  Model instances are usually called entities.  All model classes
+  inheriting from Model automatically have MetaModel as their
+  metaclass, so that the properties are fixed up properly after the
+  class once the class is defined.
+
+  Because of this, you cannot use the same Property object to describe
+  multiple properties -- you must create separate Property objects for
+  each property.  E.g. this does not work:
+
+    wrong_prop = StringProperty()
+    class Wrong(Model):
+      wrong1 = wrong_prop
+      wrong2 = wrong_prop
+
+  The kind is normally equal to the class name (exclusive of the
+  module name or any other parent scope).  To override the kind,
+  define a class method named _get_kind(), as follows:
+
+    class MyModel(Model):
+      @classmethod
+      def _get_kind(cls):
+        return 'AnotherKind'
+  """
+
+  __metaclass__ = MetaModel
+
+  # Class variables updated by _fix_up_properties()
+  _properties = None
+  _has_repeated = False
+  _kind_map = {}  # Dict mapping {kind: Model subclass}
+
+  # Defaults for instance variables.
+  _entity_key = None
+  _values = None
+  _projection = ()  # Tuple of names of projected properties.
+
+  # Hardcoded pseudo-property for the key.
+  _key = ModelKey()
+  key = _key
+
+  def __init__(self, *args, **kwds):
+    """Creates a new instance of this model (a.k.a. an entity).
+
+    The new entity must be written to the datastore using an explicit
+    call to .put().
+
+    Keyword Args:
+      key: Key instance for this model. If key is used, id and parent must
+        be None.
+      id: Key id for this model. If id is used, key must be None.
+      parent: Key instance for the parent model or None for a top-level one.
+        If parent is used, key must be None.
+      namespace: Optional namespace.
+      app: Optional app ID.
+      **kwds: Keyword arguments mapping to properties of this model.
+
+    Note: you cannot define a property named key; the .key attribute
+    always refers to the entity's key.  But you can define properties
+    named id or parent.  Values for the latter cannot be passed
+    through the constructor, but can be assigned to entity attributes
+    after the entity has been created.
+    """
+    if args:
+      raise TypeError('Model constructor takes no positional arguments.')
+    get_arg = self.__get_arg
+    key = get_arg(kwds, 'key')
+    id = get_arg(kwds, 'id')
+    app = get_arg(kwds, 'app')
+    namespace = get_arg(kwds, 'namespace')
+    parent = get_arg(kwds, 'parent')
+    projection = get_arg(kwds, 'projection')
+    if key is not None:
+      if (id is not None or parent is not None or
+          app is not None or namespace is not None):
+        raise datastore_errors.BadArgumentError(
+            'Model constructor given key= does not accept '
+            'id=, app=, namespace=, or parent=.')
+      self._key = _validate_key(key, entity=self)
+    elif (id is not None or parent is not None or
+          app is not None or namespace is not None):
+      self._key = Key(self._get_kind(), id,
+                      parent=parent, app=app, namespace=namespace)
+    self._values = {}
+    self._set_attributes(kwds)
+    # Set the projection last, otherwise it will prevent _set_attributes().
+    if projection:
+      self._projection = tuple(projection)
+
+  @classmethod
+  def __get_arg(cls, kwds, kwd):
+    """Helper method to parse keywords that may be property names."""
+    alt_kwd = '_' + kwd
+    if alt_kwd in kwds:
+      return kwds.pop(alt_kwd)
+    if kwd in kwds:
+      obj = getattr(cls, kwd, None)
+      if not isinstance(obj, Property) or isinstance(obj, ModelKey):
+        return kwds.pop(kwd)
+    return None
+
+  def __getstate__(self):
+    return self._to_pb().Encode()
+
+  def __setstate__(self, serialized_pb):
+    pb = entity_pb.EntityProto(serialized_pb)
+    self.__init__()
+    self.__class__._from_pb(pb, set_key=False, ent=self)
+
+  def _populate(self, **kwds):
+    """Populate an instance from keyword arguments.
+
+    Each keyword argument will be used to set a corresponding
+    property.  Keywords must refer to valid property name.  This is
+    similar to passing keyword arguments to the Model constructor,
+    except that no provisions for key, id or parent are made.
+    """
+    self._set_attributes(kwds)
+  populate = _populate
+
+  def _set_attributes(self, kwds):
+    """Internal helper to set attributes from keyword arguments.
+
+    Expando overrides this.
+    """
+    cls = self.__class__
+    for name, value in kwds.iteritems():
+      prop = getattr(cls, name)  # Raises AttributeError for unknown properties.
+      if not isinstance(prop, Property):
+        raise TypeError('Cannot set non-property %s' % name)
+      prop._set_value(self, value)
+
+  def _find_uninitialized(self):
+    """Internal helper to find uninitialized properties.
+
+    Returns:
+      A set of property names.
+    """
+    return set(name
+               for name, prop in self._properties.iteritems()
+               if not prop._is_initialized(self))
+
+  def _check_initialized(self):
+    """Internal helper to check for uninitialized properties.
+
+    Raises:
+      BadValueError if it finds any.
+    """
+    baddies = self._find_uninitialized()
+    if baddies:
+      raise datastore_errors.BadValueError(
+        'Entity has uninitialized properties: %s' % ', '.join(baddies))
+
+  def __repr__(self):
+    """Return an unambiguous string representation of an entity."""
+    args = []
+    for prop in self._properties.itervalues():
+      if prop._has_value(self):
+        val = prop._retrieve_value(self)
+        if val is None:
+          rep = 'None'
+        elif prop._repeated:
+          reprs = [prop._value_to_repr(v) for v in val]
+          if reprs:
+            reprs[0] = '[' + reprs[0]
+            reprs[-1] = reprs[-1] + ']'
+            rep = ', '.join(reprs)
+          else:
+            rep = '[]'
+        else:
+          rep = prop._value_to_repr(val)
+        args.append('%s=%s' % (prop._code_name, rep))
+    args.sort()
+    if self._key is not None:
+      args.insert(0, 'key=%r' % self._key)
+    if self._projection:
+      args.append('_projection=%r' % (self._projection,))
+    s = '%s(%s)' % (self.__class__.__name__, ', '.join(args))
+    return s
+
+  @classmethod
+  def _get_kind(cls):
+    """Return the kind name for this class.
+
+    This defaults to cls.__name__; users may overrid this to give a
+    class a different on-disk name than its class name.
+    """
+    return cls.__name__
+
+  @classmethod
+  def _class_name(cls):
+    """A hook for polymodel to override.
+
+    For regular models and expandos this is just an alias for
+    _get_kind().  For PolyModel subclasses, it returns the class name
+    (as set in the 'class' attribute thereof), whereas _get_kind()
+    returns the kind (the class name of the root class of a specific
+    PolyModel hierarchy).
+    """
+    return cls._get_kind()
+
+  @classmethod
+  def _default_filters(cls):
+    """Return an iterable of filters that are always to be applied.
+
+    This is used by PolyModel to quietly insert a filter for the
+    current class name.
+    """
+    return ()
+
+  @classmethod
+  def _reset_kind_map(cls):
+    """Clear the kind map.  Useful for testing."""
+    # Preserve "system" kinds, like __namespace__
+    keep = {}
+    for name, value in cls._kind_map.iteritems():
+      if name.startswith('__') and name.endswith('__'):
+        keep[name] = value
+    cls._kind_map.clear()
+    cls._kind_map.update(keep)
+
+  def _has_complete_key(self):
+    """Return whether this entity has a complete key."""
+    return self._key is not None and self._key.id() is not None
+
+  def __hash__(self):
+    """Dummy hash function.
+
+    Raises:
+      Always TypeError to emphasize that entities are mutable.
+    """
+    raise TypeError('Model is not immutable')
+
+  # TODO: Reject __lt__, __le__, __gt__, __ge__.
+
+  def __eq__(self, other):
+    """Compare two entities of the same class for equality."""
+    if other.__class__ is not self.__class__:
+      return NotImplemented
+    if self._key != other._key:
+      # TODO: If one key is None and the other is an explicit
+      # incomplete key of the simplest form, this should be OK.
+      return False
+    return self._equivalent(other)
+
+  def _equivalent(self, other):
+    """Compare two entities of the same class, excluding keys."""
+    if other.__class__ is not self.__class__:  # TODO: What about subclasses?
+      raise NotImplementedError('Cannot compare different model classes. '
+                                '%s is not %s' % (self.__class__.__name__,
+                                                  other.__class_.__name__))
+    if set(self._projection) != set(other._projection):
+      return False
+    # It's all about determining inequality early.
+    if len(self._properties) != len(other._properties):
+      return False  # Can only happen for Expandos.
+    my_prop_names = set(self._properties.iterkeys())
+    their_prop_names = set(other._properties.iterkeys())
+    if my_prop_names != their_prop_names:
+      return False  # Again, only possible for Expandos.
+    if self._projection:
+      my_prop_names = set(self._projection)
+    for name in my_prop_names:
+      if '.' in name:
+        name, _ = name.split('.', 1)
+      my_value = self._properties[name]._get_value(self)
+      their_value = other._properties[name]._get_value(other)
+      if my_value != their_value:
+        return False
+    return True
+
+  def _to_pb(self, pb=None, allow_partial=False, set_key=True):
+    """Internal helper to turn an entity into an EntityProto protobuf."""
+    if not allow_partial:
+      self._check_initialized()
+    if pb is None:
+      pb = entity_pb.EntityProto()
+
+    if set_key:
+      # TODO: Move the key stuff into ModelAdapter.entity_to_pb()?
+      self._key_to_pb(pb)
+
+    for unused_name, prop in sorted(self._properties.iteritems()):
+      prop._serialize(self, pb)
+
+    return pb
+
+  def _key_to_pb(self, pb):
+    """Internal helper to copy the key into a protobuf."""
+    key = self._key
+    if key is None:
+      pairs = [(self._get_kind(), None)]
+      ref = key_module._ReferenceFromPairs(pairs, reference=pb.mutable_key())
+    else:
+      ref = key.reference()
+      pb.mutable_key().CopyFrom(ref)
+    group = pb.mutable_entity_group()  # Must initialize this.
+    # To work around an SDK issue, only set the entity group if the
+    # full key is complete.  TODO: Remove the top test once fixed.
+    if key is not None and key.id():
+      elem = ref.path().element(0)
+      if elem.id() or elem.name():
+        group.add_element().CopyFrom(elem)
+
+  @classmethod
+  def _from_pb(cls, pb, set_key=True, ent=None, key=None):
+    """Internal helper to create an entity from an EntityProto protobuf."""
+    if not isinstance(pb, entity_pb.EntityProto):
+      raise TypeError('pb must be a EntityProto; received %r' % pb)
+    if ent is None:
+      ent = cls()
+
+    # A key passed in overrides a key in the pb.
+    if key is None and pb.key().path().element_size():
+      key = Key(reference=pb.key())
+    # If set_key is not set, skip a trivial incomplete key.
+    if key is not None and (set_key or key.id() or key.parent()):
+      ent._key = key
+
+    indexed_properties = pb.property_list()
+    unindexed_properties = pb.raw_property_list()
+    projection = []
+    for plist in [indexed_properties, unindexed_properties]:
+      for p in plist:
+        if p.meaning() == entity_pb.Property.INDEX_VALUE:
+          projection.append(p.name())
+        prop = ent._get_property_for(p, plist is indexed_properties)
+        prop._deserialize(ent, p)
+
+    ent._set_projection(projection)
+    return ent
+
+  def _set_projection(self, projection):
+    self._projection = tuple(projection)
+    by_prefix = {}
+    for propname in projection:
+      if '.' in propname:
+        head, tail = propname.split('.', 1)
+        if head in by_prefix:
+          by_prefix[head].append(tail)
+        else:
+          by_prefix[head] = [tail]
+    for propname, proj in by_prefix.iteritems():
+      prop = self._properties.get(propname)
+      subval = prop._get_base_value_unwrapped_as_list(self)
+      for item in subval:
+        item._set_projection(proj)
+
+  def _get_property_for(self, p, indexed=True, depth=0):
+    """Internal helper to get the Property for a protobuf-level property."""
+    name = p.name()
+    parts = name.split('.')
+    if len(parts) <= depth:
+      # Apparently there's an unstructured value here.
+      # Assume it is a None written for a missing value.
+      # (It could also be that a schema change turned an unstructured
+      # value into a structured one.  In that case, too, it seems
+      # better to return None than to return an unstructured value,
+      # since the latter doesn't match the current schema.)
+      return None
+    next = parts[depth]
+    prop = self._properties.get(next)
+    if prop is None:
+      prop = self._fake_property(p, next, indexed)
+    return prop
+
+  def _clone_properties(self):
+    """Internal helper to clone self._properties if necessary."""
+    cls = self.__class__
+    if self._properties is cls._properties:
+      self._properties = dict(cls._properties)
+
+  def _fake_property(self, p, next, indexed=True):
+    """Internal helper to create a fake Property."""
+    self._clone_properties()
+    if p.name() != next and not p.name().endswith('.' + next):
+      prop = StructuredProperty(Expando, next)
+      prop._store_value(self, _BaseValue(Expando()))
+    else:
+      compressed = p.meaning_uri() == _MEANING_URI_COMPRESSED
+      prop = GenericProperty(next,
+                             repeated=p.multiple(),
+                             indexed=indexed,
+                             compressed=compressed)
+    prop._code_name = next
+    self._properties[prop._name] = prop
+    return prop
+
+  @utils.positional(1)
+  def _to_dict(self, include=None, exclude=None):
+    """Return a dict containing the entity's property values.
+
+    Args:
+      include: Optional set of property names to include, default all.
+      exclude: Optional set of property names to skip, default none.
+        A name contained in both include and exclude is excluded.
+    """
+    if (include is not None and
+        not isinstance(include, (list, tuple, set, frozenset))):
+      raise TypeError('include should be a list, tuple or set')
+    if (exclude is not None and
+        not isinstance(exclude, (list, tuple, set, frozenset))):
+      raise TypeError('exclude should be a list, tuple or set')
+    values = {}
+    for prop in self._properties.itervalues():
+      name = prop._code_name
+      if include is not None and name not in include:
+        continue
+      if exclude is not None and name in exclude:
+        continue
+      try:
+        values[name] = prop._get_for_dict(self)
+      except UnprojectedPropertyError:
+        pass  # Ignore unprojected properties rather than failing.
+    return values
+  to_dict = _to_dict
+
+  @classmethod
+  def _fix_up_properties(cls):
+    """Fix up the properties by calling their _fix_up() method.
+
+    Note: This is called by MetaModel, but may also be called manually
+    after dynamically updating a model class.
+    """
+    # Verify that _get_kind() returns an 8-bit string.
+    kind = cls._get_kind()
+    if not isinstance(kind, basestring):
+      raise KindError('Class %s defines a _get_kind() method that returns '
+                      'a non-string (%r)' % (cls.__name__, kind))
+    if not isinstance(kind, str):
+      try:
+        kind = kind.encode('ascii')  # ASCII contents is okay.
+      except UnicodeEncodeError:
+        raise KindError('Class %s defines a _get_kind() method that returns '
+                        'a Unicode string (%r); please encode using utf-8' %
+                        (cls.__name__, kind))
+    cls._properties = {}  # Map of {name: Property}
+    if cls.__module__ == __name__:  # Skip the classes in *this* file.
+      return
+    for name in set(dir(cls)):
+      attr = getattr(cls, name, None)
+      if isinstance(attr, ModelAttribute) and not isinstance(attr, ModelKey):
+        if name.startswith('_'):
+          raise TypeError('ModelAttribute %s cannot begin with an underscore '
+                          'character. _ prefixed attributes are reserved for '
+                          'temporary Model instance values.' % name)
+        attr._fix_up(cls, name)
+        if isinstance(attr, Property):
+          if (attr._repeated or
+              (isinstance(attr, StructuredProperty) and
+               attr._modelclass._has_repeated)):
+            cls._has_repeated = True
+          cls._properties[attr._name] = attr
+    cls._update_kind_map()
+
+  @classmethod
+  def _update_kind_map(cls):
+    """Update the kind map to include this class."""
+    cls._kind_map[cls._get_kind()] = cls
+
+  def _prepare_for_put(self):
+    if self._properties:
+      for prop in self._properties.itervalues():
+        prop._prepare_for_put(self)
+
+  @classmethod
+  def _check_indexed_properties(cls, property_names):
+    """Helper to check that property_names refer to indexed properties.
+
+    Called from query.py.
+
+    Args:
+      property_names: List or tuple of property names -- each being a string,
+        possibly containing dots (to address subproperties of structured
+        properties).
+
+    Raises:
+      InvalidPropertyError if one of the properties is invalid.
+      AssertionError if the argument is not a list or tuple of strings.
+    """
+    assert isinstance(property_names, (list, tuple)), repr(property_names)
+    for name in property_names:
+      assert isinstance(name, basestring), repr(name)
+      if '.' in name:
+        name, rest = name.split('.', 1)
+      else:
+        rest = None
+      prop = cls._properties.get(name)
+      if prop is None:
+        cls._unknown_property(name)
+      else:
+        prop._check_indexed_property(rest)
+
+  @classmethod
+  def _unknown_property(cls, name):
+    """Helper to raise an exception for an unknown property name.
+
+    This is called by _check_indexed_properties().  It is overridden by
+    Expando, where this is a no-op.
+
+    Raises:
+      InvalidPropertyError.
+    """
+    raise InvalidPropertyError('Unknown property %s' % name)
+
+  def _validate_key(self, key):
+    """Validation for _key attribute (designed to be overridden).
+
+    Args:
+      key: Proposed Key to use for entity.
+
+    Returns:
+      A valid key.
+    """
+    return key
+
+  # Datastore API using the default context.
+  # These use local import since otherwise they'd be recursive imports.
+
+  @classmethod
+  def _query(cls, *args, **kwds):
+    """Create a Query object for this class.
+
+    Args:
+      distinct: Optional bool, short hand for group_bys = projection.
+      *args: Used to apply an initial filter
+      **kwds: are passed to the Query() constructor.
+
+    Returns:
+      A Query object.
+    """
+    # Validating distinct.
+    if 'distinct' in kwds:
+      if 'group_bys' in kwds:
+        raise TypeError(
+            'cannot use distinct= and group_bys= at the same time')
+      projection = kwds.get('projection')
+      if not projection:
+        raise TypeError(
+            'cannot use distinct= without projection=')
+      if kwds.pop('distinct'):
+        kwds['group_bys'] = projection
+
+    # TODO: Disallow non-empty args and filter=.
+    from .query import Query  # Import late to avoid circular imports.
+    qry = Query(kind=cls._get_kind(), **kwds)
+    qry = qry.filter(*cls._default_filters())
+    qry = qry.filter(*args)
+    return qry
+  query = _query
+
+  @classmethod
+  def _gql(cls, query_string, *args, **kwds):
+    """Run a GQL query."""
+    from .query import gql  # Import late to avoid circular imports.
+    return gql('SELECT * FROM %s %s' % (cls._class_name(), query_string),
+               *args, **kwds)
+  gql = _gql
+
+  def _put(self, **ctx_options):
+    """Write this entity to the datastore.
+
+    If the operation creates or completes a key, the entity's key
+    attribute is set to the new, complete key.
+
+    Returns:
+      The key for the entity.  This is always a complete key.
+    """
+    return self._put_async(**ctx_options).get_result()
+  put = _put
+
+  def _put_async(self, **ctx_options):
+    """Write this entity to the datastore.
+
+    This is the asynchronous version of Model._put().
+    """
+    if self._projection:
+      raise datastore_errors.BadRequestError('Cannot put a partial entity')
+    from . import tasklets
     ctx = tasklets.get_context()
-    ctx.set_cache_policy(True)
-    ctx.set_memcache_policy(False)
-    e = Employee()
-    key = e.put()
-    key.get()  # Warm the cache
-    def trans():
-      key.delete()
-    model.transaction(trans)
-    e = key.get()
-    self.assertEqual(e, None)
+    self._prepare_for_put()
+    if self._key is None:
+      self._key = Key(self._get_kind(), None)
+    self._pre_put_hook()
+    fut = ctx.put(self, **ctx_options)
+    post_hook = self._post_put_hook
+    if not self._is_default_hook(Model._default_post_put_hook, post_hook):
+      fut.add_immediate_callback(post_hook, fut)
+    return fut
+  put_async = _put_async
 
-  def testTransactionalDeleteClearsMemcache(self):
-    # See issue 57.  http://goo.gl/bXkib
-    class Employee(model.Model):
-      pass
+  @classmethod
+  def _get_or_insert(*args, **kwds):
+    """Transactionally retrieves an existing entity or creates a new one.
+
+    Positional Args:
+      name: Key name to retrieve or create.
+
+    Keyword Args:
+      namespace: Optional namespace.
+      app: Optional app ID.
+      parent: Parent entity key, if any.
+      context_options: ContextOptions object (not keyword args!) or None.
+      **kwds: Keyword arguments to pass to the constructor of the model class
+        if an instance for the specified key name does not already exist. If
+        an instance with the supplied key_name and parent already exists,
+        these arguments will be discarded.
+
+    Returns:
+      Existing instance of Model class with the specified key name and parent
+      or a new one that has just been created.
+    """
+    cls, args = args[0], args[1:]
+    return cls._get_or_insert_async(*args, **kwds).get_result()
+  get_or_insert = _get_or_insert
+
+  @classmethod
+  def _get_or_insert_async(*args, **kwds):
+    """Transactionally retrieves an existing entity or creates a new one.
+
+    This is the asynchronous version of Model._get_or_insert().
+    """
+    # NOTE: The signature is really weird here because we want to support
+    # models with properties named e.g. 'cls' or 'name'.
+    from . import tasklets
+    cls, name = args  # These must always be positional.
+    get_arg = cls.__get_arg
+    app = get_arg(kwds, 'app')
+    namespace = get_arg(kwds, 'namespace')
+    parent = get_arg(kwds, 'parent')
+    context_options = get_arg(kwds, 'context_options')
+    # (End of super-special argument parsing.)
+    # TODO: Test the heck out of this, in all sorts of evil scenarios.
+    if not isinstance(name, basestring):
+      raise TypeError('name must be a string; received %r' % name)
+    elif not name:
+      raise ValueError('name cannot be an empty string.')
+    key = Key(cls, name, app=app, namespace=namespace, parent=parent)
+
+    @tasklets.tasklet
+    def internal_tasklet():
+      @tasklets.tasklet
+      def txn():
+        ent = yield key.get_async(options=context_options)
+        if ent is None:
+          ent = cls(**kwds)  # TODO: Use _populate().
+          ent._key = key
+          yield ent.put_async(options=context_options)
+        raise tasklets.Return(ent)
+      if in_transaction():
+        # Run txn() in existing transaction.
+        ent = yield txn()
+      else:
+        # Maybe avoid a transaction altogether.
+        ent = yield key.get_async(options=context_options)
+        if ent is None:
+          # Run txn() in new transaction.
+          ent = yield transaction_async(txn)
+      raise tasklets.Return(ent)
+
+    return internal_tasklet()
+
+  get_or_insert_async = _get_or_insert_async
+
+  @classmethod
+  def _allocate_ids(cls, size=None, max=None, parent=None, **ctx_options):
+    """Allocates a range of key IDs for this model class.
+
+    Args:
+      size: Number of IDs to allocate. Either size or max can be specified,
+        not both.
+      max: Maximum ID to allocate. Either size or max can be specified,
+        not both.
+      parent: Parent key for which the IDs will be allocated.
+      **ctx_options: Context options.
+
+    Returns:
+      A tuple with (start, end) for the allocated range, inclusive.
+    """
+    return cls._allocate_ids_async(size=size, max=max, parent=parent,
+                                   **ctx_options).get_result()
+  allocate_ids = _allocate_ids
+
+  @classmethod
+  def _allocate_ids_async(cls, size=None, max=None, parent=None,
+                          **ctx_options):
+    """Allocates a range of key IDs for this model class.
+
+    This is the asynchronous version of Model._allocate_ids().
+    """
+    from . import tasklets
     ctx = tasklets.get_context()
-    ctx.set_cache_policy(False)
-    ctx.set_memcache_policy(True)
-    e = Employee()
-    key = e.put()
-    key.get()  # Warm the cache
-    def trans():
-      key.delete()
-    model.transaction(trans)
-    e = key.get()
-    self.assertEqual(e, None)
+    cls._pre_allocate_ids_hook(size, max, parent)
+    key = Key(cls._get_kind(), None, parent=parent)
+    fut = ctx.allocate_ids(key, size=size, max=max, **ctx_options)
+    post_hook = cls._post_allocate_ids_hook
+    if not cls._is_default_hook(Model._default_post_allocate_ids_hook,
+                                post_hook):
+      fut.add_immediate_callback(post_hook, size, max, parent, fut)
+    return fut
+  allocate_ids_async = _allocate_ids_async
 
-  def testCustomStructuredPropertyInRepeatedStructuredProperty(self):
-    class FuzzyDate(object):
+  @classmethod
+  @utils.positional(3)
+  def _get_by_id(cls, id, parent=None, **ctx_options):
+    """Returns an instance of Model class by ID.
 
-      def __init__(self, first, last=None):
-        assert isinstance(first, datetime.date)
-        assert last is None or isinstance(last, datetime.date)
-        self.first = first
-        self.last = last or first
+    This is really just a shorthand for Key(cls, id, ...).get().
 
-      def __eq__(self, other):
-        if not isinstance(other, FuzzyDate):
-          return NotImplemented
-        return self.first == other.first and self.last == other.last
+    Args:
+      id: A string or integer key ID.
+      parent: Optional parent key of the model to get.
+      namespace: Optional namespace.
+      app: Optional app ID.
+      **ctx_options: Context options.
 
-      def __ne__(self, other):
-        eq = self.__eq__(other)
-        if eq is not NotImplemented:
-          eq = not eq
-        return eq
+    Returns:
+      A model instance or None if not found.
+    """
+    return cls._get_by_id_async(id, parent=parent, **ctx_options).get_result()
+  get_by_id = _get_by_id
 
-      def __repr__(self):
-        return 'FuzzyDate(%r, %r)' % (self.first, self.last)
+  @classmethod
+  @utils.positional(3)
+  def _get_by_id_async(cls, id, parent=None, app=None, namespace=None,
+                       **ctx_options):
+    """Returns an instance of Model class by ID (and app, namespace).
 
-    class FuzzyDateModel(model.Model):
-      first = model.DateProperty()
-      last = model.DateProperty()
+    This is the asynchronous version of Model._get_by_id().
+    """
+    key = Key(cls._get_kind(), id, parent=parent, app=app, namespace=namespace)
+    return key.get_async(**ctx_options)
+  get_by_id_async = _get_by_id_async
 
-    class FuzzyDateProperty(model.StructuredProperty):
+  # Hooks that wrap around mutations.  Most are class methods with
+  # the notable exception of put, which is an instance method.
 
-      def __init__(self, **kwds):
-        super(FuzzyDateProperty, self).__init__(FuzzyDateModel, **kwds)
+  # To use these, override them in your model class and call
+  # super(<myclass>, cls).<hook>(*args).
 
-      def _validate(self, value):
-        assert isinstance(value, FuzzyDate)
+  # Note that the pre-hooks are called before the operation is
+  # scheduled.  The post-hooks are called (by the Future) after the
+  # operation has completed.
 
-      def _to_base_type(self, value):
-        return FuzzyDateModel(first=value.first, last=value.last)
+  # Do not use or touch the _default_* hooks.  These exist for
+  # internal use only.
 
-      def _from_base_type(self, value):
-        return FuzzyDate(value.first, value.last)
+  @classmethod
+  def _pre_allocate_ids_hook(cls, size, max, parent):
+    pass
+  _default_pre_allocate_ids_hook = _pre_allocate_ids_hook
 
-    class Inner(model.Model):
-      date = FuzzyDateProperty()
+  @classmethod
+  def _post_allocate_ids_hook(cls, size, max, parent, future):
+    pass
+  _default_post_allocate_ids_hook = _post_allocate_ids_hook
 
-    class Outer(model.Model):
-      wrap = model.StructuredProperty(Inner, repeated=True)
+  @classmethod
+  def _pre_delete_hook(cls, key):
+    pass
+  _default_pre_delete_hook = _pre_delete_hook
 
-    d = datetime.date(1900,1,1)
-    fd = FuzzyDate(d)
-    orig = Outer(wrap=[Inner(date=fd), Inner(date=fd)])
-    key = orig.put()
-    q = Outer.query()
-    copy = q.get()
-    self.assertEqual(copy, orig)
+  @classmethod
+  def _post_delete_hook(cls, key, future):
+    pass
+  _default_post_delete_hook = _post_delete_hook
 
-  def testSubStructureEqualToNone(self):
-    class IntRangeModel(model.Model):
-      first = model.IntegerProperty()
-      last = model.IntegerProperty()
+  @classmethod
+  def _pre_get_hook(cls, key):
+    pass
+  _default_pre_get_hook = _pre_get_hook
 
-    class Inner(model.Model):
-      range = model.StructuredProperty(IntRangeModel)
-      other = model.IntegerProperty()
+  @classmethod
+  def _post_get_hook(cls, key, future):
+    pass
+  _default_post_get_hook = _post_get_hook
 
-    class Outer(model.Model):
-      wrap = model.StructuredProperty(Inner, repeated=True)
+  def _pre_put_hook(self):
+    pass
+  _default_pre_put_hook = _pre_put_hook
 
-    orig = Outer(wrap=[Inner(other=2),
-                       Inner(range=IntRangeModel(first=0, last=10), other=4)])
-    orig.put()
-    q = Outer.query()
-    copy = q.get()
-    self.assertEqual(copy.wrap[0].range, None)
-    self.assertEqual(copy.wrap[1].range, IntRangeModel(first=0, last=10))
+  def _post_put_hook(self, future):
+    pass
+  _default_post_put_hook = _post_put_hook
 
-  def testStructuredPropertyFromDict(self):
-    # See issue 207.  http://goo.gl/IQXS6
-    class Address(model.Model):
-      street = model.StringProperty()
-      city = model.StringProperty()
-    class AddressList(model.Model):
-      addresses = model.StructuredProperty(Address, repeated=True)
-      backup = model.StructuredProperty(Address)
-    class Person(model.Model):
-      name = model.StringProperty()
-      home = model.StructuredProperty(Address)
-      alist = model.StructuredProperty(AddressList)
-      blist = model.LocalStructuredProperty(AddressList)
-    joe = Person(name='Joe',
-                 home=Address(street='Main', city='Springfield'),
-                 alist=AddressList(addresses=[Address(street='A', city='B'),
-                                              Address(street='C', city='D')],
-                                   backup=Address(street='X', city='Y')),
-                 blist=AddressList(addresses=[Address(street='E', city='F')],
-                                   backup=None))
-    data = joe._to_dict()
-    new_joe = Person(**data)
-    self.assertEqual(new_joe, joe)
+  @staticmethod
+  def _is_default_hook(default_hook, hook):
+    """Checks whether a specific hook is in its default state.
 
-  # See issue 216 for the following testExpando* tests.  http://goo.gl/wNN3g
+    Args:
+      cls: A ndb.model.Model class.
+      default_hook: Callable specified by ndb internally (do not override).
+      hook: The hook defined by a model class using _post_*_hook.
 
-  def testExpandoInModelFromDict(self):
-    class E(model.Expando):
-      pass
-    class M(model.Model):
-      m1 = model.StructuredProperty(E)
-    e = E(e1='e1test')
-    a = M(m1=e)
-    new_a = M(**a.to_dict())
-    self.assertEqual(a, new_a)
-
-  def testExpandoInExpandoFromDict(self):
-    class A(model.Expando):
-      pass
-    e = model.Expando(b1='b1test')
-    a = A(a1=e)
-    new_a = A(**a.to_dict())
-    self.assertEqual(a, new_a)
-
-  def testExpandoInExpandoWithoutStructureFromDict(self):
-    class A(model.Expando):
-      pass
-    e = model.Expando(b1='b1test')
-    a = A(a1=e)
-    a_new = A(c1='c1test')
-    a_new.populate(**a.to_dict())
-    a.c1 = 'c1test'
-    self.assertEqual(a, a_new)
-
-  def testExpandoInExpandoWithStructureFromDict(self):
-    class A(model.Expando):
-      pass
-    e = model.Expando(b1='b1test')
-    a = A(a1=e)
-    a_new = A(a1=model.Expando())
-    a_new.populate(**a.to_dict())
-    self.assertEqual(a, a_new)
-
-  def testExpandoInExpandoWithListsFromDict(self):
-    class B(model.Expando):
-      pass
-    class A(model.Expando):
-      pass
-    bs = [B(b1=[0, 1, 2, 3]), B(b2='b2test')]
-    a = A(a1=bs)
-    new_a = A(**a.to_dict())
-    self.assertEqual(a, new_a)
-
-  def testTransactionsCachingAndQueries(self):
-    # Prompted by a doc question and this (outdated) thread:
-    # https://groups.google.com/forum/?fromgroups#!topic/appengine-ndb-discuss/idxsAZNHsqI
-    class Root(model.Model):
-      pass
-    class Foo(model.Model):
-      name = model.StringProperty()
-    root = Root()
-    root.put()
-    foo1 = Foo(name='foo1', parent=root.key)
-    foo1.put()
-    @model.transactional
-    def txn1():
-      foo2 = foo1.key.get()
-      assert foo2.name == 'foo1'
-      foo2.name = 'foo2'
-      foo2.put()
-      foo3 = foo1.key.get(use_cache=False)
-      foos = Foo.query(ancestor=root.key).fetch(use_cache=False)
-      assert foo1 == foo3 == foos[0]
-      assert foo1 != foo2
-      raise model.Rollback
-    @model.transactional
-    def txn2():
-      foo2 = foo1.key.get()
-      assert foo2.name == 'foo1'
-      foo2.name = 'foo2'
-      foo2.put()
-      foo3 = foo1.key.get(use_cache=True)
-      foos = Foo.query(ancestor=root.key).fetch(use_cache=True)
-      assert foo2 == foo3 == foos[0]
-      assert foo1 != foo2
-      raise model.Rollback
-    txn1()
-    txn2()
+    Raises:
+      TypeError if either the default hook or the tested hook are not callable.
+    """
+    if not hasattr(default_hook, '__call__'):
+      raise TypeError('Default hooks for ndb.model.Model must be callable')
+    if not hasattr(hook, '__call__'):
+      raise TypeError('Hooks must be callable')
+    return default_hook.im_func is hook.im_func
 
 
-def main():
-  unittest.main()
+class Expando(Model):
+  """Model subclass to support dynamic Property names and types.
+
+  See the module docstring for details.
+  """
+
+  # Set this to False (in an Expando subclass or entity) to make
+  # properties default to unindexed.
+  _default_indexed = True
+
+  def _set_attributes(self, kwds):
+    for name, value in kwds.iteritems():
+      setattr(self, name, value)
+
+  @classmethod
+  def _unknown_property(cls, name):
+    # It is not an error as the property may be a dynamic property.
+    pass
+
+  def __getattr__(self, name):
+    if name.startswith('_'):
+      return super(Expando, self).__getattr__(name)
+    prop = self._properties.get(name)
+    if prop is None:
+      return super(Expando, self).__getattribute__(name)
+    return prop._get_value(self)
+
+  def __setattr__(self, name, value):
+    if (name.startswith('_') or
+        isinstance(getattr(self.__class__, name, None), (Property, property))):
+      return super(Expando, self).__setattr__(name, value)
+    # TODO: Refactor this to share code with _fake_property().
+    self._clone_properties()
+    if isinstance(value, Model):
+      prop = StructuredProperty(Model, name)
+    elif isinstance(value, dict):
+      prop = StructuredProperty(Expando, name)
+    else:
+      repeated = isinstance(value, list)
+      indexed = self._default_indexed
+      # TODO: What if it's a list of Model instances?
+      prop = GenericProperty(name, repeated=repeated, indexed=indexed)
+    prop._code_name = name
+    self._properties[name] = prop
+    prop._set_value(self, value)
+
+  def __delattr__(self, name):
+    if (name.startswith('_') or
+        isinstance(getattr(self.__class__, name, None), (Property, property))):
+      return super(Expando, self).__delattr__(name)
+    prop = self._properties.get(name)
+    if not isinstance(prop, Property):
+      raise TypeError('Model properties must be Property instances; not %r' %
+                      prop)
+    prop._delete_value(self)
+    if prop in self.__class__._properties:
+      raise RuntimeError('Property %s still in the list of properties for the '
+                         'base class.' % name)
+    del self._properties[name]
 
 
-if __name__ == '__main__':
-  main()
+@utils.positional(1)
+def transaction(callback, **ctx_options):
+  """Run a callback in a transaction.
+
+  Args:
+    callback: A function or tasklet to be called.
+    **ctx_options: Transaction options.
+
+  Useful options include:
+    retries=N: Retry up to N times (i.e. try up to N+1 times)
+    propagation=<flag>: Determines how an existing transaction should be
+      propagated, where <flag> can be one of the following:
+      TransactionOptions.NESTED: Start a nested transaction (this is the
+        default; but actual nested transactions are not yet implemented,
+        so effectively you can only use this outside an existing transaction).
+      TransactionOptions.MANDATORY: A transaction must already be in progress.
+      TransactionOptions.ALLOWED: If a transaction is in progress, join it.
+      TransactionOptions.INDEPENDENT: Always start a new parallel transaction.
+    xg=True: On the High Replication Datastore, enable cross-group
+      transactions, i.e. allow writing to up to 5 entity groups.
+
+  WARNING: Using anything other than NESTED for the propagation flag
+  can have strange consequences.  When using ALLOWED or MANDATORY, if
+  an exception is raised, the transaction is likely not safe to
+  commit.  When using INDEPENDENT it is not generally safe to return
+  values read to the caller (as they were not read in the caller's
+  transaction).
+
+  Returns:
+    Whatever callback() returns.
+
+  Raises:
+    Whatever callback() raises; datastore_errors.TransactionFailedError
+    if the transaction failed.
+
+  Note:
+    To pass arguments to a callback function, use a lambda, e.g.
+      def my_callback(key, inc):
+        ...
+      transaction(lambda: my_callback(Key(...), 1))
+  """
+  fut = transaction_async(callback, **ctx_options)
+  return fut.get_result()
+
+
+@utils.positional(1)
+def transaction_async(callback, **ctx_options):
+  """Run a callback in a transaction.
+
+  This is the asynchronous version of transaction().
+  """
+  from . import tasklets
+  return tasklets.get_context().transaction(callback, **ctx_options)
+
+
+def in_transaction():
+  """Return whether a transaction is currently active."""
+  from . import tasklets
+  return tasklets.get_context().in_transaction()
+
+
+@utils.positional(1)
+def transactional(_func=None, **ctx_options):
+  """Decorator to make a function automatically run in a transaction.
+
+  Args:
+    _func: Do not use.
+    **ctx_options: Transaction options (see transaction(), but propagation
+      default to TransactionOptions.ALLOWED).
+
+  This supports two forms:
+
+  (1) Vanilla:
+      @transactional
+      def callback(arg):
+        ...
+
+  (2) With options:
+      @transactional(retries=1)
+      def callback(arg):
+        ...
+  """
+  if _func is not None:
+    # Form (1), vanilla.
+    if ctx_options:
+      raise TypeError('@transactional() does not take positional arguments')
+    # TODO: Avoid recursion, call outer_transactional_wrapper() directly?
+    return transactional()(_func)
+
+  ctx_options.setdefault('propagation',
+                         datastore_rpc.TransactionOptions.ALLOWED)
+
+  # Form (2), with options.
+  def outer_transactional_wrapper(func):
+    @utils.wrapping(func)
+    def inner_transactional_wrapper(*args, **kwds):
+      f = func
+      if args or kwds:
+        f = lambda: func(*args, **kwds)
+      return transaction(f, **ctx_options)
+    return inner_transactional_wrapper
+  return outer_transactional_wrapper
+
+
+@utils.positional(1)
+def non_transactional(_func=None, allow_existing=True):
+  """A decorator that ensures a function is run outside a transaction.
+
+  If there is an existing transaction (and allow_existing=True), the
+  existing transaction is paused while the function is executed.
+
+  Args:
+    _func: Do not use.
+    allow_existing: If false, throw an exception if called from within
+      a transaction.  If true, temporarily re-establish the
+      previous non-transactional context.  Defaults to True.
+
+  This supports two forms, similar to transactional().
+
+  Returns:
+    A wrapper for the decorated function that ensures it runs outside a
+    transaction.
+  """
+  if _func is not None:
+    # TODO: Avoid recursion, call outer_non_transactional_wrapper() directly?
+    return non_transactional()(_func)
+
+  def outer_non_transactional_wrapper(func):
+    from . import tasklets
+    @utils.wrapping(func)
+    def inner_non_transactional_wrapper(*args, **kwds):
+      ctx = tasklets.get_context()
+      if not ctx.in_transaction():
+        return func(*args, **kwds)
+      if not allow_existing:
+        raise datastore_errors.BadRequestError(
+          '%s cannot be called within a transaction.' % func.__name__)
+      save_ctx = ctx
+      while ctx.in_transaction():
+        ctx = ctx._parent_context
+        if ctx is None:
+          raise datastore_errors.BadRequestError(
+            'Context without non-transactional ancestor')
+      try:
+        tasklets.set_context(ctx)
+        return func(*args, **kwds)
+      finally:
+        tasklets.set_context(save_ctx)
+    return inner_non_transactional_wrapper
+  return outer_non_transactional_wrapper
+
+
+def get_multi_async(keys, **ctx_options):
+  """Fetches a sequence of keys.
+
+  Args:
+    keys: A sequence of keys.
+    **ctx_options: Context options.
+
+  Returns:
+    A list of futures.
+  """
+  return [key.get_async(**ctx_options) for key in keys]
+
+
+def get_multi(keys, **ctx_options):
+  """Fetches a sequence of keys.
+
+  Args:
+    keys: A sequence of keys.
+    **ctx_options: Context options.
+
+  Returns:
+    A list whose items are either a Model instance or None if the key wasn't
+    found.
+  """
+  return [future.get_result()
+          for future in get_multi_async(keys, **ctx_options)]
+
+
+def put_multi_async(entities, **ctx_options):
+  """Stores a sequence of Model instances.
+
+  Args:
+    entities: A sequence of Model instances.
+    **ctx_options: Context options.
+
+  Returns:
+    A list of futures.
+  """
+  return [entity.put_async(**ctx_options) for entity in entities]
+
+
+def put_multi(entities, **ctx_options):
+  """Stores a sequence of Model instances.
+
+  Args:
+    entities: A sequence of Model instances.
+    **ctx_options: Context options.
+
+  Returns:
+    A list with the stored keys.
+  """
+  return [future.get_result()
+          for future in put_multi_async(entities, **ctx_options)]
+
+
+def delete_multi_async(keys, **ctx_options):
+  """Deletes a sequence of keys.
+
+  Args:
+    keys: A sequence of keys.
+    **ctx_options: Context options.
+
+  Returns:
+    A list of futures.
+  """
+  return [key.delete_async(**ctx_options) for key in keys]
+
+
+def delete_multi(keys, **ctx_options):
+  """Deletes a sequence of keys.
+
+  Args:
+    keys: A sequence of keys.
+    **ctx_options: Context options.
+
+  Returns:
+    A list whose items are all None, one per deleted key.
+  """
+  return [future.get_result()
+          for future in delete_multi_async(keys, **ctx_options)]
+
+
+def get_indexes_async(**ctx_options):
+  """Get a data structure representing the configured indexes.
+
+  Args:
+    **ctx_options: Context options.
+
+  Returns:
+    A future.
+  """
+  from . import tasklets
+  ctx = tasklets.get_context()
+  return ctx.get_indexes(**ctx_options)
+
+
+def get_indexes(**ctx_options):
+  """Get a data structure representing the configured indexes.
+
+  Args:
+    **ctx_options: Context options.
+
+  Returns:
+    A list of Index objects.
+  """
+  return get_indexes_async(**ctx_options).get_result()
+
+
+# Update __all__ to contain all Property and Exception subclasses.
+for _name, _object in globals().items():
+  if ((_name.endswith('Property') and issubclass(_object, Property)) or
+      (_name.endswith('Error') and issubclass(_object, Exception))):
+    __all__.append(_name)

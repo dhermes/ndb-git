@@ -31,13 +31,13 @@ Overview
 
 The code is structured into two subdirectories:
 
-- ndb: This is the main code base.  Notable submodules are
-  key.py, model.py, query.py, eventloop.py, tasklets.py, and context.py.
-  For each module foo.py there's a corresponding foo_test.py which
+- `ndb`: This is the main code base.  Notable submodules are
+  `key.py`, `model.py`, `query.py`, `eventloop.py`, `tasklets.py`, and `context.py`.
+  For each module `foo.py` there's a corresponding `foo_test.py` which
   contains unit tests for that module.
 
-- demo: This is where demo programs live.  Check out guestbook.py and
-  main.py.
+- `demo`: This is where demo programs live.  Check out `guestbook.py` and
+  `main.py`.
 
 The main directory contains some scripts and auxiliary files.
 
@@ -47,31 +47,43 @@ How To
 You need to separately download and install the latest version of the
 App Engine Python SDK.  NOTE: older versions don't work!!!!!!!!!
 (If you don't know where to find that you are not ready to play with
-this code. :-) Assuming the SDK lives at /usr/local/google_appengine,
-you need to add that directory to your $PYTHONPATH environment
+this code. :-) Assuming the SDK lives at `/usr/local/google_appengine`,
+you need to add that directory to your `$PYTHONPATH` environment
 variable.  You should then be able to run something like this:
 
-  >>> import ndb
+```python
+>>> import ndb
+```
 
 If this works your setup is correct.
 
 To run the tests, use
 
-  make
+```
+make
+```
 
-To run the tests with coverage, install the coverag.py package from
-http://nedbatchelder.com/code/coverage/ and then use
+To run the tests with coverage, install the `coverage.py` [package][1]
+and then use
 
-  make coverage
+```
+make coverage
+```
 
-To run the demo app on localhost:8080, use
+To run the demo app on `localhost:8080`, use
 
-  make serve
+```
+make serve
+```
 
-To run an interactive shell with ndb already imported and some sample
+To run an interactive shell with `ndb` already imported and some sample
 classes defined, use
 
-  make python
+```
+make python
+```
 
-See the Makefile for more details.  For Windows users, the "make.cmd"
+See the `Makefile` for more details.  For Windows users, the `make.cmd`
 script has similar functionality.
+
+[1]: http://nedbatchelder.com/code/coverage/

@@ -4,6 +4,12 @@ All other NDB code should import its Google App Engine modules from
 this module.  If necessary, add new imports here (in both places).
 """
 
+import sys
+# May have namespace conflicts such as google.net.proto.
+# This is especially problematic for applications using both
+# `google` packages.
+sys.modules.pop('google', None)
+
 try:
   from google.appengine.datastore import entity_pb
   normal_environment = True

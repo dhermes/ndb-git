@@ -2,7 +2,9 @@
 
 __author__ = 'Beech Horn'
 
+
 import sys
+
 
 try:
   import ndb
@@ -12,6 +14,7 @@ except ImportError:
   import google3.third_party.apphosting.python.ndb
   from google3.third_party.apphosting.python.ndb.google_test_imports import unittest
   location = 'google3.third_party.apphosting.python.ndb'
+
 
 def load_tests(loader, standard_tests, pattern):
   mods = ['context', 'eventloop', 'key', 'metadata',

@@ -4,12 +4,26 @@ All other NDB code should import its Google App Engine modules from
 this module.  If necessary, add new imports here (in both places).
 """
 
+import os
 import sys
-# May have namespace conflicts such as google.net.proto.
-# This is especially problematic for applications using both
-# `google` packages.
-sys.modules.pop('google', None)
 
+
+def get_appengine_path():
+  gae_path = os.getenv('GAE')
+  if gae_path is None:
+    raise EnvironmentError('Google App Path not found.')
+  return gae_path
+
+
+def set_appengine_imports():
+  gae_path = get_appengine_path()
+  sys.path.insert(0, gae_path)
+  sys.modules.pop('google', None)
+  import dev_appserver
+  dev_appserver.fix_sys_path()
+
+
+set_appengine_imports()
 try:
   from google.appengine.datastore import entity_pb
   normal_environment = True

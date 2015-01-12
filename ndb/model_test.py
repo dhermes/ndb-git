@@ -2720,7 +2720,6 @@ property <
     b2 = key2.get()
     self.assertEqual(b2.inner.key, None)
 
-  @unittest.skip('Does not pass with nosetest.')
   def testLocalStructuredPropertyKeyDisagreement(self):
     class Inner(model.Model):
       pass
@@ -2738,6 +2737,7 @@ property <
       pass
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(AnotherInner, keep_keys=True)
+
     other1 = key1.get()
     self.assertRaises(model.KindError, lambda: other1.inner)
     self.assertRaises(model.KindError, other1.put)

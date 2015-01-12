@@ -2,7 +2,6 @@
 
 set -ev
 
-ls cache
 if [[ -d cache ]]; then
   echo "Cache exists. Current contents:"
   ls -1F cache
@@ -19,3 +18,6 @@ else
   wget https://storage.googleapis.com/appengine-sdks/featured/google_appengine_1.9.17.zip -nv
   unzip -q google_appengine_1.9.17.zip
 fi
+
+echo "Cache contents after getting SDK:"
+ls -1F .

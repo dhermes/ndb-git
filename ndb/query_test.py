@@ -970,7 +970,6 @@ class QueryTests(test_utils.NDBTest):
     # TODO: Assert that only one RPC call was made.
 
   def testCursorsDelete(self):
-    """Tests that deleting an entity doesn't affect cursor positioning."""
     class DeletedEntity(model.Model):
       name = model.StringProperty()
     entities = [DeletedEntity(name='A'),

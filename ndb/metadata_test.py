@@ -107,7 +107,6 @@ class MetadataTests(test_utils.NDBTest):
                      [(p.kind_name, p.property_name) for p in res])
 
   def testEntityGroup(self):
-    """Test for EntityGroup class."""
     self.HRTest()
     foo_e = self.Foo(age=11)
     foo_e.put()
@@ -124,7 +123,6 @@ class MetadataTests(test_utils.NDBTest):
     self.assertTrue(egfoo_k.get().version > v1)
 
   def testGetEntityGroupVersion(self):
-    """Test for get_entity_group_version function."""
     self.HRTest()
     foo_e = self.Foo(age=11)
     foo_e.put()

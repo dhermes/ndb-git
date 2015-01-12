@@ -6,7 +6,7 @@ cache:
 
 before_install:
   - ./get_app_engine_sdk.sh
-  - export GAE="./google_appengine"
+  - export GAE="./cache/google_appengine"
 
 install:
   - pip install tox

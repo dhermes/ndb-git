@@ -18,3 +18,6 @@ workspace.xml$
 htmlcov$
 .tox
 nosetests.xml
+
+# Travis cache
+cache/

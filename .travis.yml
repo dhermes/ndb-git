@@ -4,5 +4,8 @@ before_install:
   - wget https://storage.googleapis.com/appengine-sdks/featured/google_appengine_1.9.17.zip -nv
   - unzip -q google_appengine_1.9.17.zip
 
+install:
+  - pip install tox
+
 script:
-  - make runtests GAE=./google_appengine
+  - tox

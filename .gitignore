@@ -5,8 +5,16 @@
 *#*$
 *@*$
 index.yaml$
+.DS_Store$
+workspace.xml$
+
+# Packages
+*.egg
+*.egg-info
+
+# Unit test / coverage reports
 .coverage$
 .coverage.*$
 htmlcov$
-.DS_Store$
-workspace.xml$
+.tox
+nosetests.xml

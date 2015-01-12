@@ -5,7 +5,7 @@ cache:
   - cache/
 
 before_install:
-  - get_app_engine_sdk.sh
+  - ./get_app_engine_sdk.sh
   - export GAE="./google_appengine"
 
 install:

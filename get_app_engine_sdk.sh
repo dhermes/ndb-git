@@ -5,6 +5,8 @@ set -ev
 [[ -d ${HOME}/cache ]] || mkdir ${HOME}/cache
 cd ${HOME}/cache
 
+pwd
+ls
 if [[ ! -f google_appengine_1.9.17.zip ]]; then
   wget https://storage.googleapis.com/appengine-sdks/featured/google_appengine_1.9.17.zip -nv
 fi

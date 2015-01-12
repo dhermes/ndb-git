@@ -6,6 +6,11 @@ this module.  If necessary, add new imports here (in both places).
 
 import os
 import sys
+try:
+  import google
+  GOOGLE_PACKAGE_PATH = set(google.__path__)
+except ImportError:
+  GOOGLE_PACKAGE_PATH = None
 
 
 def set_appengine_imports():
@@ -17,6 +22,11 @@ def set_appengine_imports():
   sys.modules.pop('google', None)
   import dev_appserver
   dev_appserver.fix_sys_path()
+
+  if GOOGLE_PACKAGE_PATH is not None:
+    import google
+    GOOGLE_PACKAGE_PATH.update(google.__path__)
+    google.__path__ = list(GOOGLE_PACKAGE_PATH)
 
 
 set_appengine_imports()

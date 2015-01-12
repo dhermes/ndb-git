@@ -8,15 +8,11 @@ import os
 import sys
 
 
-def get_appengine_path():
+def set_appengine_imports():
   gae_path = os.getenv('GAE')
   if gae_path is None:
-    raise EnvironmentError('Google App Path not found.')
-  return gae_path
+    return
 
-
-def set_appengine_imports():
-  gae_path = get_appengine_path()
   sys.path.insert(0, gae_path)
   sys.modules.pop('google', None)
   import dev_appserver

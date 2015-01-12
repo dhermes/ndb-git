@@ -1,8 +1,12 @@
 language: python
+sudo: false
+cache:
+  directories:
+  - cache/
 
 before_install:
-  - wget https://storage.googleapis.com/appengine-sdks/featured/google_appengine_1.9.17.zip -nv
-  - unzip -q google_appengine_1.9.17.zip
+  - get_app_engine_sdk.sh
+  - export GAE="./google_appengine"
 
 install:
   - pip install tox

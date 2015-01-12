@@ -2,8 +2,8 @@
 
 set -ev
 
-[[ -d ${HOME}/cache ]] || mkdir ${HOME}/cache
-cd ${HOME}/cache
+[[ -d cache ]] || mkdir cache
+cd cache
 
 pwd
 ls

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -ev
+
 [[ -d ${HOME}/cache ]] || mkdir ${HOME}/cache
 cd ${HOME}/cache
 

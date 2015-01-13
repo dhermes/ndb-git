@@ -13,7 +13,8 @@ if google_imports.normal_environment:
 else:
   # Prospective search is optional.
   try:
-    from google3.apphosting.api.prospective_search import prospective_search_stub
+    from google3.apphosting.api.prospective_search import (
+        prospective_search_stub)
   except ImportError:
     pass
   from google3.apphosting.datastore import datastore_stub_util

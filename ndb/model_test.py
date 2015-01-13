@@ -1396,16 +1396,18 @@ class ModelTests(test_utils.NDBTest):
                                         datetime.datetime(1995, 4, 15, 5, 0, 0))
 
   def testDateProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.DateProperty,
-                                        lambda: datetime.datetime.utcnow().date(),
-                                        datetime.date(1982, 12, 1),
-                                        datetime.date(1995, 4, 15))
+    self.MultiDateAndOrTimePropertyTest(
+        model.DateProperty,
+        lambda: datetime.datetime.utcnow().date(),
+        datetime.date(1982, 12, 1),
+        datetime.date(1995, 4, 15))
 
   def testTimeProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.TimeProperty,
-                                        lambda: datetime.datetime.utcnow().time(),
-                                        datetime.time(9, 0, 0),
-                                        datetime.time(5, 0, 0, 500))
+    self.MultiDateAndOrTimePropertyTest(
+        model.TimeProperty,
+        lambda: datetime.datetime.utcnow().time(),
+        datetime.time(9, 0, 0),
+        datetime.time(5, 0, 0, 500))
 
   def testStructuredProperty(self):
     class Address(model.Model):

@@ -11,11 +11,11 @@ GAEPATH=$(GAE):$(GAE)/lib/yaml/lib:$(GAE)/lib/webob:$(GAE)/lib/fancy_urllib:$(GA
 TESTS=	`find ndb -name [a-z]\*_test.py ! -name ndb_test.py`
 NONTESTS=`find ndb -name [a-z]\*.py ! -name \*_test.py`
 PORT=	8080
-ADDRESS=localhost
+HOST=	localhost
 PYTHON= python -Wignore
-APPCFG= $(GAE)/appcfg.py
-DEV_APPSERVER=$(GAE)/dev_appserver.py
-CUSTOM=	custom
+APPCFG= $(GAE)/../../bin/appcfg.py
+DEV_APPSERVER=$(GAE)/../../bin/dev_appserver.py
+CUSTOM=	documentation_samples/custom_property.py
 COVERAGE=coverage
 DATASTORE_PATH=/tmp/ndb-dev_appserver.datastore
 
@@ -84,22 +84,22 @@ oldcoverage:
 	echo "open file://`pwd`/htmlcov/index.html"
 
 serve:
-	$(PYTHON) $(DEV_APPSERVER) . --port $(PORT) --address $(ADDRESS) $(FLAGS) --datastore_path=$(DATASTORE_PATH)
+	$(PYTHON) $(DEV_APPSERVER) demo/ --port $(PORT) --host $(HOST) $(FLAGS) --datastore_path=$(DATASTORE_PATH)
 
 debug:
-	$(PYTHON) $(DEV_APPSERVER) . --port $(PORT) --address $(ADDRESS) --debug $(FLAGS) --datastore_path=$(DATASTORE_PATH)
+	$(PYTHON) $(DEV_APPSERVER) demo/ --port $(PORT) --host $(HOST) --debug $(FLAGS) --datastore_path=$(DATASTORE_PATH)
 
 deploy:
-	$(PYTHON) $(APPCFG) update . $(FLAGS)
+	$(PYTHON) $(APPCFG) update demo/ $(FLAGS)
 
 bench:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) bench.py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/bench.py $(FLAGS)
 
-keybench:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) keybench.py $(FLAGS)
+key_bench:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/key_bench.py $(FLAGS)
 
 python:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i startup.py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i development_tools/ndb_repl.py $(FLAGS)
 
 python_raw:
 	PYTHONPATH=$(GAEPATH):. $(PYTHON) $(FLAGS)
@@ -117,17 +117,17 @@ clean:
 	rm -rf htmlcov .coverage
 	rm -f `find . -name \*.pyc -o -name \*~ -o -name @\* -o -name \*.orig -o -name \*.rej -o -name \#*\#`
 
-g gettaskletrace:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) gettaskletrace.py $(FLAGS)
+g get_tasklet_race:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/get_tasklet_race.py $(FLAGS)
 
 s stress:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) stress.py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/stress.py $(FLAGS)
 
 race:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) race.py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/race.py $(FLAGS)
 
-mttest:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) mttest.py $(FLAGS)
+multithread_test:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/multithread_test.py $(FLAGS)
 
 x $(CUSTOM):
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) $(CUSTOM).py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) $(CUSTOM) $(FLAGS)

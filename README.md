@@ -1,3 +1,7 @@
+# Google App Engine NDB Library
+
+[![Travis Build Status](https://travis-ci.org/dhermes/ndb-git.svg?branch=master)](https://travis-ci.org/dhermes/ndb-git)
+
 This is a `git` port of [`appengine-ndb-experiment`][2] (a Mercurial
 project). This was imported via
 
@@ -90,17 +94,29 @@ are the same as for the App Engine SDK).
 Overview
 --------
 
-The code is structured into two subdirectories:
+The code is structured into six subdirectories:
 
 - `ndb`: This is the main code base.  Notable submodules are
   `key.py`, `model.py`, `query.py`, `eventloop.py`, `tasklets.py`, and
   `context.py`. For each module `foo.py` there's a corresponding `foo_test.py`
   which contains unit tests for that module.
 
-- `demo`: This is where demo programs live.  Check out `guestbook.py` and
-  `main.py`.
+- `demo`: This is where a demo App Engine application lives. Check out
+  some of the handlers, e.g. `guestbook.py` and `main.py`.
 
-The main directory contains some scripts and auxiliary files.
+- `benchmarks`: This contains scripts for benchmarking and torture testing
+  the implementation.
+
+- `development_tools`: This contains helper modules to use while developing
+  changes and working with the datastore backend.
+
+- `documentation_samples`: This contains samples used for public facing
+  documentation.
+
+- `unused_test_scripts`: This contains out of date / unused scripts
+
+The main directory contains some scripts and auxiliary files used
+for repository management and continuous integration.
 
 How To
 ------

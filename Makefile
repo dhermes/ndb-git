@@ -9,19 +9,19 @@ FLAGS=
 PYTHON= python -Wignore
 
 help:
-	@echo 'Makefile for NDB for Google App Engine                       '
-	@echo '                                                             '
-	@echo 'Usage:                                                       '
-	@echo '   make bench             Task creation benchmark            '
-	@echo '   make keybench          Key comparison benchmark           '
-	@echo '   make gettaskletrace    Test race conditions in get_tasklet'
-	@echo '   make stress            Threadsafe Py27 Stress Test        '
-	@echo '   make race              Race condition tests for NDB       '
-	@echo '   make multithread_test  Multi-threading torture test       '
-	@echo '   make repl              Custom REPL with NDB loaded        '
-	@echo '                                                             '
-	@echo 'NOTE: This file is being wound down and will be fully        '
-	@echo '      replaced by tox.ini.                                   '
+	@echo 'Makefile for NDB for Google App Engine                         '
+	@echo '                                                               '
+	@echo 'Usage:                                                         '
+	@echo '   make bench             Task creation benchmark              '
+	@echo '   make keybench          Key comparison benchmark             '
+	@echo '   make get_tasklet_race    Test race conditions in get_tasklet'
+	@echo '   make stress            Threadsafe Py27 Stress Test          '
+	@echo '   make race              Race condition tests for NDB         '
+	@echo '   make multithread_test  Multi-threading torture test         '
+	@echo '   make repl              Custom REPL with NDB loaded          '
+	@echo '                                                               '
+	@echo 'NOTE: This file is being wound down and will be fully          '
+	@echo '      replaced by tox.ini.                                     '
 
 
 bench:
@@ -30,8 +30,8 @@ bench:
 keybench:
 	PYTHONPATH=. $(PYTHON) keybench.py $(FLAGS)
 
-gettaskletrace:
-	PYTHONPATH=. $(PYTHON) gettaskletrace.py $(FLAGS)
+get_tasklet_race:
+	PYTHONPATH=. $(PYTHON) get_tasklet_race.py $(FLAGS)
 
 stress:
 	PYTHONPATH=. $(PYTHON) stress.py $(FLAGS)

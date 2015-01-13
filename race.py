@@ -9,6 +9,7 @@ logging.basicConfig(
 import threading
 import time
 
+from ndb import google_imports  # For path fixing.
 from google.appengine.api import memcache
 from google.appengine.ext import testbed
 

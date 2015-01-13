@@ -1,5 +1,6 @@
 """Runs an infinite loop to find race conditions in context get_tasklet."""
 
+from ndb import google_imports  # For path fixing.
 from google.appengine.ext import testbed
 
 from ndb import model

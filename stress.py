@@ -5,6 +5,7 @@ import random
 import threading
 import time
 
+from ndb import google_imports  # For path fixing.
 from google.appengine.api import apiproxy_stub_map
 from google.appengine.datastore import datastore_stub_util
 
@@ -106,6 +107,7 @@ def main():
           t.join()
 
         tb.deactivate()
+
 
 if __name__ == '__main__':
   main()

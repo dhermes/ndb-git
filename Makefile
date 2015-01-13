@@ -6,27 +6,22 @@
 # For Windows users, the "make.cmd" script has similar functionality.
 
 FLAGS=
-export GAE?=/usr/local/google_appengine
-TESTS=`find ndb -name [a-z]\*_test.py ! -name ndb_test.py`
-NONTESTS=`find ndb -name [a-z]\*.py ! -name \*_test.py`
-PORT=8080
-ADDRESS=localhost
 PYTHON= python -Wignore
-APPCFG= $(GAE)/appcfg.py
-DEV_APPSERVER=$(GAE)/dev_appserver.py
-COVERAGE=coverage
-DATASTORE_PATH=/tmp/ndb-dev_appserver.datastore
 
-default: runtests
+help:
+	@echo 'Makefile for NDB for Google App Engine                       '
+	@echo '                                                             '
+	@echo 'Usage:                                                       '
+	@echo '   make bench             Task creation benchmark            '
+	@echo '   make keybench          Key comparison benchmark           '
+	@echo '   make gettaskletrace    Test race conditions in get_tasklet'
+	@echo '   make stress            Threadsafe Py27 Stress Test        '
+	@echo '   make race              Race condition tests for NDB       '
+	@echo '   make multithread_test  Multi-threading torture test       '
+	@echo '                                                             '
+	@echo 'NOTE: This file is being wound down and will be fully        '
+	@echo '      replaced by tox.ini.                                   '
 
-runtests ndb_test:
-	PYTHONPATH=. $(PYTHON) ndb/ndb_test.py $(FLAGS)
-
-c cov cove cover coverage:
-	$(COVERAGE) run ndb/ndb_test.py $(FLAGS)
-	$(COVERAGE) html $(NONTESTS)
-	$(COVERAGE) report -m $(NONTESTS)
-	echo "open file://`pwd`/htmlcov/index.html"
 
 bench:
 	PYTHONPATH=. $(PYTHON) bench.py $(FLAGS)
@@ -34,14 +29,16 @@ bench:
 keybench:
 	PYTHONPATH=. $(PYTHON) keybench.py $(FLAGS)
 
-g gettaskletrace:
+gettaskletrace:
 	PYTHONPATH=. $(PYTHON) gettaskletrace.py $(FLAGS)
 
-s stress:
+stress:
 	PYTHONPATH=. $(PYTHON) stress.py $(FLAGS)
 
 race:
 	PYTHONPATH=. $(PYTHON) race.py $(FLAGS)
 
-multithread_test.py:
+multithread_test:
 	PYTHONPATH=. $(PYTHON) multithread_test.py $(FLAGS)
+
+.PHONY: help bench keybench gettaskletrace stress race multithread_test

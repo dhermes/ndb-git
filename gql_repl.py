@@ -3,7 +3,7 @@ import readline
 from ndb import *
 from ndb import metadata
 
-import startup
+import ndb_repl
 
 def repl():
   while True:

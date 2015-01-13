@@ -1,6 +1,6 @@
 """Benchmark for put_multi().
 
-Run this using 'make x CUSTOM=putbench FLAGS=-n'.
+Run this using 'make put_bench FLAGS=-n'.
 Use FLAGS=-o to get the corresponding profile for the old db package.
 """
 
@@ -10,6 +10,7 @@ import pstats
 import sys
 import time
 
+from ndb import google_imports  # For path fixing.
 # Pay no attention to the testbed behind the curtain.
 from google.appengine.ext import testbed
 tb = testbed.Testbed()

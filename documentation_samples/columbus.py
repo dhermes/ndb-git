@@ -1,4 +1,5 @@
-# Example from "Writing Property Subclasses".
+# Example from "Writing Property Subclasses":
+# https://cloud.google.com/appengine/docs/python/ndb/subclassprop
 from ndb import *
 
 # Pay no attention to the testbed behind the curtain.

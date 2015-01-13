@@ -1,10 +1,12 @@
-"""Prototype MessageProperty for ProtoRPC.
-
-Run this using 'make x CUSTOM=msgprop'.
-"""
+"""Prototype MessageProperty for ProtoRPC."""
+# From
+# https://cloud.google.com/appengine/docs/python/ndb/properties#msgprop
+# and
+# https://cloud.google.com/appengine/docs/python/tools/protorpc/
 
 import time
 
+from ndb import google_imports  # For path fixing.
 from google.appengine.ext import testbed
 
 from protorpc import messages

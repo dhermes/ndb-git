@@ -5,15 +5,12 @@ import os
 import pstats
 import sys
 
+from ndb import google_imports  # For path fixing.
 from google.appengine.ext import testbed
 from google.appengine.ext import db
 
 from ndb import utils
 utils.DEBUG = False
-
-from ndb import eventloop
-from ndb import model
-from ndb import tasklets
 
 # Hack: replace os.environ with a plain dict.  This is to make the
 # benchmark more similar to the production environment, where

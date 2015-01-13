@@ -8,5 +8,11 @@ before_install:
   - ./get_app_engine_sdk.sh
   - export GAE="./cache/google_appengine"
 
+install:
+  - pip install tox
+
 script:
-  - make runtests
+  - tox -e py27
+
+after_success:
+  - tox -e coveralls

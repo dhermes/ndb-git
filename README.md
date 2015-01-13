@@ -1,8 +1,9 @@
 # Google App Engine NDB Library
 
 [![Travis Build Status](https://travis-ci.org/dhermes/ndb-git.svg?branch=master)](https://travis-ci.org/dhermes/ndb-git)
+[![Coverage Status](https://img.shields.io/coveralls/dhermes/ndb-git.svg)](https://coveralls.io/r/dhermes/ndb-git?branch=master)
 
-This is a `git` port of [`appengine-ndb-experiment`][2] (a Mercurial
+This is a `git` port of [`appengine-ndb-experiment`][1] (a Mercurial
 project). This was imported via
 
 ```
@@ -121,13 +122,6 @@ for repository management and continuous integration.
 How To
 ------
 
-To run the tests with coverage, install the `coverage.py` [package][1]
-and then use
-
-```
-make coverage
-```
-
 To run the demo app on `localhost:8080`, use
 
 ```
@@ -144,10 +138,9 @@ make repl
 See the `Makefile` for more details; run
 
 ```
-make repl
+make
 ```
 
 for a help message.
 
-[1]: http://nedbatchelder.com/code/coverage/
-[2]: https://code.google.com/p/appengine-ndb-experiment/
+[1]: https://code.google.com/p/appengine-ndb-experiment/

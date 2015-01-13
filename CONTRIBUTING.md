@@ -83,13 +83,13 @@ Running Tests
 -   To run all tests for `ndb`, run
 
     ```
-    $ make runtests
+    $ tox -e py27
     ```
 
     or
 
     ```
-    $ make runtests GAE=${PATH_TO_GAE_SDK}
+    $ GAE=${PATH_TO_GAE_SDK} tox -e py27
     ```
 
     where the environment variable `GAE` is the path to to Google App
@@ -110,7 +110,15 @@ Running Tests
     `${GOOGLE_CLOUD_SDK}/platform/google_appengine` (as of January 2014).
 
     You can export this path as the `${GAE}` environment variable and
-    then tests can be run simply as `make runtests`.
+    then tests can be run simply as `tox -e py27`.
+
+-   To see test coverage, run
+
+    ```
+    tox -e cover
+    ```
+
+    where as above `GAE` should be set.
 
 Contributor License Agreements
 ------------------------------

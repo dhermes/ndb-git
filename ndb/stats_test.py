@@ -20,7 +20,6 @@ class StatsTests(test_utils.NDBTest):
   the_module = stats
 
   def PopulateStatEntities(self):
-    """Insert stat entities into the datastore."""
     # GlobalStat
     self.CreateStatEntity(stats.GlobalStat.STORED_KIND_NAME,
         has_entity_bytes=True,
@@ -191,7 +190,6 @@ class StatsTests(test_utils.NDBTest):
     datastore.Put(stat)
 
   def testGlobalStat(self):
-    """Test fetching the global stat singleton."""
     res = stats.GlobalStat.query().fetch()
     self.assertEquals(1, len(res))
     self.assertEquals(4, res[0].bytes)
@@ -202,7 +200,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals(1, res[0].composite_index_bytes)
 
   def testNamespaceStat(self):
-    """Test fetching the global stat singleton."""
     res = stats.NamespaceStat.query().fetch()
     self.assertEquals(1, len(res))
     self.assertEquals(4, res[0].bytes)
@@ -214,7 +211,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals(1, res[0].composite_index_bytes)
 
   def testKindStat(self):
-    """Test fetching the Kind stats."""
     res = stats.KindStat.query().fetch()
     self.assertEquals(2, len(res))
     self.assertEquals('foo', res[0].kind_name)
@@ -226,7 +222,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals(1, res[0].composite_index_bytes)
 
   def testKindRootEntityStat(self):
-    """Test fetching the Kind root entity stats."""
     res = stats.KindRootEntityStat.query().fetch()
     self.assertEquals(2, len(res))
     self.assertEquals('foo3', res[0].kind_name)
@@ -234,7 +229,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals(2, res[0].entity_bytes)
 
   def testKindNonRootEntityStat(self):
-    """Test fetching the Kind non-root entity stats."""
     res = stats.KindNonRootEntityStat.query().fetch()
     self.assertEquals(2, len(res))
     self.assertEquals('foo5', res[0].kind_name)
@@ -242,7 +236,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals(2, res[0].entity_bytes)
 
   def testPropertyTypeStat(self):
-    """Test fetching the property type stats."""
     res = stats.PropertyTypeStat.query().fetch()
     self.assertEquals(2, len(res))
     self.assertEquals('pt1', res[0].property_type)
@@ -252,7 +245,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals(1, res[0].builtin_index_bytes)
 
   def testKindPropertyTypeStat(self):
-    """Test fetching the (kind, property type) stats."""
     res = stats.KindPropertyTypeStat.query().fetch()
     self.assertEquals(3, len(res))
     self.assertEquals('foo1', res[0].kind_name)
@@ -272,7 +264,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals('foo2', res[0].kind_name)
 
   def testKindPropertyNameStat(self):
-    """Test fetching the (kind, property name) type stats."""
     res = stats.KindPropertyNameStat.query().fetch()
     self.assertEquals(3, len(res))
     self.assertEquals('foo11', res[0].kind_name)
@@ -292,7 +283,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals('foo21', res[0].kind_name)
 
   def testKindPropertyNamePropertyTypeStat(self):
-    """Test fetching the (kind, property name, property type) stats."""
     res = stats.KindPropertyNamePropertyTypeStat.query().fetch()
     self.assertEquals(3, len(res))
     self.assertEquals('foo12', res[0].kind_name)
@@ -315,7 +305,6 @@ class StatsTests(test_utils.NDBTest):
     self.assertEquals('foo22', res[0].kind_name)
 
   def testKindCompositeIndex(self):
-    """Test fetching the (kind, composite index id) stats."""
     res = stats.KindCompositeIndexStat.query().fetch()
     self.assertEquals(3, len(res))
     self.assertEquals('foo12', res[0].kind_name)

@@ -1355,7 +1355,7 @@ class ContextTests(test_utils.NDBTest):
     finally:
       memcache.create_rpc = orig_create_rpc
 
-  def start_test_server(self):
+  def _start_test_server(self):
     host = '127.0.0.1'
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1382,7 +1382,7 @@ class ContextTests(test_utils.NDBTest):
 
   def testUrlFetch(self):
     self.testbed.init_urlfetch_stub()
-    host, port = self.start_test_server()
+    host, port = self._start_test_server()
     fut = self.ctx.urlfetch('http://%s:%d' % (host, port))
     result = fut.get_result()
     self.assertEqual(result.status_code, 200)

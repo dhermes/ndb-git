@@ -1,2 +1,6 @@
 [run]
 branch = True
+[report]
+omit =
+	*test*
+	ndb/google_imports.py

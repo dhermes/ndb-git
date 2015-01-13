@@ -277,12 +277,19 @@ class QueryTests(test_utils.NDBTest):
                       lambda: Emp.sub.booh == 42)
     self.assertRaises(datastore_errors.BadFilterError,
                       lambda: Emp.struct == Foo(name='a'))
-    # TODO: Make this fail?  See issue 89.  http://goo.gl/K4gbY
-    # Currently StructuredProperty(..., indexed=False) has no effect.
-    ## self.assertRaises(datastore_errors.BadFilterError,
-    ##                   lambda: Emp.struct.name == 'a')
     self.assertRaises(datastore_errors.BadFilterError,
                       lambda: Emp.local == Foo(name='a'))
+    return Emp
+
+  @unittest.skip('BadFilterError is not raised.')
+  def testQueryUnindexedBadFilterFails(self):
+    Emp = self.testQueryUnindexedFails()
+    # TODO: Make this fail?  See issue 89.  http://goo.gl/K4gbY
+    # Currently StructuredProperty(..., indexed=False) has no effect.
+    self.assertRaises(datastore_errors.BadFilterError,
+                      lambda: Emp.struct.name == 'a')
+    # Once fixed, this case should be removed and the assert moved
+    # back into `testQueryUnindexedFails`.
 
   def testConstructor(self):
     self.ExpectWarnings()
@@ -970,7 +977,6 @@ class QueryTests(test_utils.NDBTest):
     # TODO: Assert that only one RPC call was made.
 
   def testCursorsDelete(self):
-    """Tests that deleting an entity doesn't affect cursor positioning."""
     class DeletedEntity(model.Model):
       name = model.StringProperty()
     entities = [DeletedEntity(name='A'),
@@ -1564,10 +1570,10 @@ class QueryTests(test_utils.NDBTest):
     self.checkGql([self.jill], "SELECT * FROM Foo LIMIT 1 OFFSET 1",
                   fetch=lambda q: q.fetch())
 
-# XXX TODO: Make this work:
-##   def testGqlLimitQueryUsingFetch(self):
-##     self.checkGql([self.joe, self.jill], "SELECT * FROM Foo LIMIT 2",
-##                   fetch=lambda q: q.fetch(3))
+  @unittest.skip('GQL Fetch currently fails.')
+  def testGqlLimitQueryUsingFetch(self):
+    self.checkGql([self.joe, self.jill], "SELECT * FROM Foo LIMIT 2",
+                  fetch=lambda q: q.fetch(3))
 
   def testGqlOffsetQueryUsingFetchPage(self):
     q = query.gql("SELECT * FROM Foo LIMIT 2")
@@ -1576,12 +1582,21 @@ class QueryTests(test_utils.NDBTest):
     self.assertEqual(True, more1)
     res2, cur2, more2 = q.fetch_page(1, start_cursor=cur1)
     self.assertEqual([self.jill], res2)
-    # XXX TODO: Gotta make this work:
-##     self.assertEqual(False, more2)
-##     res3, cur3, more3 = q.fetch_page(1, start_cursor=cur2)
-##     self.assertEqual([], res3)
-##     self.assertEqual(False, more3)
-##     self.assertEqual(None, cur3)
+
+  @unittest.skip('More results should be False')
+  def testGqlOffsetQuerySubsequent(self):
+    q = query.gql("SELECT * FROM Foo LIMIT 2")
+    res1, cur1, more1 = q.fetch_page(1)
+    self.assertEqual([self.joe], res1)
+    self.assertEqual(True, more1)
+    res2, cur2, more2 = q.fetch_page(1, start_cursor=cur1)
+    self.assertEqual([self.jill], res2)
+
+    self.assertEqual(False, more2)
+    res3, cur3, more3 = q.fetch_page(1, start_cursor=cur2)
+    self.assertEqual([], res3)
+    self.assertEqual(False, more3)
+    self.assertEqual(None, cur3)
 
   def testGqlLimitQueryUsingFetchPage(self):
     q = query.gql("SELECT * FROM Foo OFFSET 1")

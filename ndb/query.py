@@ -259,6 +259,7 @@ class ParameterizedThing(object):
       eq = not eq
     return eq
 
+
 class Parameter(ParameterizedThing):
   """Represents a bound variable in a GQL query.
 
@@ -896,7 +897,7 @@ class Query(object):
                           projection=self.projection, group_by=self.group_by)
 
   def _get_query(self, connection):
-    self.bind()  #  Raises an exception if there are unbound parameters.
+    self.bind()  # Raises an exception if there are unbound parameters.
     kind = self.kind
     ancestor = self.ancestor
     if ancestor is not None:
@@ -1110,7 +1111,7 @@ class Query(object):
     Returns:
       A QueryIterator object.
     """
-    self.bind()  #  Raises an exception if there are unbound parameters.
+    self.bind()  # Raises an exception if there are unbound parameters.
     return QueryIterator(self, **q_options)
 
   __iter__ = iter

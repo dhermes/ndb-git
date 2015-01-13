@@ -125,10 +125,12 @@ def positional(max_pos_args):
   Note that for methods, n includes 'self'.
   """
   __ndb_debug__ = 'SKIP'
+
   def positional_decorator(wrapped):
     if not DEBUG:
       return wrapped
     __ndb_debug__ = 'SKIP'
+
     @wrapping(wrapped)
     def positional_wrapper(*args, **kwds):
       __ndb_debug__ = 'SKIP'

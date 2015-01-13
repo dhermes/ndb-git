@@ -76,9 +76,9 @@ class ContextOptions(datastore_rpc.Configuration):
         'memcache_deadline should be an integer (%r)' % (value,))
     return value
 
+
 class TransactionOptions(ContextOptions, datastore_rpc.TransactionOptions):
   """Support both context options and transaction options."""
-
 
 
 # options and config can be used interchangeably.
@@ -647,7 +647,6 @@ class Context(object):
     """
     # If this returns None, the system default (typically, 5) will apply.
     return ContextOptions.memcache_deadline(options, self._conn.config)
-
 
   def _load_from_cache_if_available(self, key):
     """Returns a cached Model instance given the entity key if available.
@@ -1241,7 +1240,7 @@ class Context(object):
       raise TypeError('delta must be a number; received %r' % delta)
     if initial_value is not None and not isinstance(initial_value, (int, long)):
       raise TypeError('initial_value must be a number or None; received %r' %
-                       initial_value)
+                      initial_value)
     if namespace is None:
       namespace = namespace_manager.get_namespace()
     return self._memcache_off_batcher.add((key, delta),
@@ -1255,7 +1254,7 @@ class Context(object):
       raise TypeError('delta must be a number; received %r' % delta)
     if initial_value is not None and not isinstance(initial_value, (int, long)):
       raise TypeError('initial_value must be a number or None; received %r' %
-                       initial_value)
+                      initial_value)
     if namespace is None:
       namespace = namespace_manager.get_namespace()
     return self._memcache_off_batcher.add((key, -delta),

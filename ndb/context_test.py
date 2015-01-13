@@ -148,6 +148,7 @@ class ContextTests(test_utils.NDBTest):
         conn=conn,
         auto_batcher_class=MyAutoBatcher,
         config=real_config)
+
     @tasklets.tasklet
     def foo():
       es = [model.Model(key=model.Key('Foo', None)) for _ in range(49)]
@@ -156,6 +157,7 @@ class ContextTests(test_utils.NDBTest):
       ks = yield fs
       self.assertEqual(len(ks), 49)
       self.assertTrue(all(isinstance(k, model.Key) for k in ks))
+
     foo().get_result()
     self.assertEqual(len(MyAutoBatcher._log), 4)
     for name, todo in MyAutoBatcher._log[2:]:
@@ -168,10 +170,12 @@ class ContextTests(test_utils.NDBTest):
   def testContext_AutoBatcher_Errors(self):
     # Test that errors are properly distributed over all Futures.
     self.ExpectWarnings()
+
     class Blobby(model.Model):
       blob = model.BlobProperty()
+
     ent1 = Blobby()
-    ent2 = Blobby(blob='x'*2000000)
+    ent2 = Blobby(blob='x' * 2000000)
     fut1 = self.ctx.put(ent1)
     fut2 = self.ctx.put(ent2)  # Error
     err1 = fut1.get_exception()
@@ -180,7 +184,7 @@ class ContextTests(test_utils.NDBTest):
     self.assertTrue(err1 is err2)
     # Try memcache as well (different tasklet, different error).
     fut1 = self.ctx.memcache_set('key1', 'x')
-    fut2 = self.ctx.memcache_set('key2', 'x'*1000001)
+    fut2 = self.ctx.memcache_set('key2', 'x' * 1000001)
     err1 = fut1.get_exception()
     err2 = fut1.get_exception()
     self.assertTrue(isinstance(err1, ValueError))
@@ -192,6 +196,7 @@ class ContextTests(test_utils.NDBTest):
     # gives more assurance that it works.
     config = datastore_rpc.Configuration(max_get_keys=3, max_put_entities=3)
     self.ctx._conn = model.make_connection(config, default_model=model.Expando)
+
     @tasklets.tasklet
     def foo():
       ents = [model.Expando() for _ in range(10)]
@@ -264,6 +269,7 @@ class ContextTests(test_utils.NDBTest):
   def testContext_CachePolicy(self):
     def should_cache(unused_key):
       return False
+
     @tasklets.tasklet
     def foo():
       key1 = model.Key(flat=('Foo', 1))
@@ -307,15 +313,20 @@ class ContextTests(test_utils.NDBTest):
     # correct namespace.
     def assertNone(expr):
       self.assertTrue(expr is None, repr(expr))
+
     def assertNotNone(expr):
       self.assertTrue(expr is not None, repr(expr))
+
     def assertLocked(expr):
       self.assertTrue(expr is context._LOCKED, repr(expr))
+
     def assertProtobuf(expr, ent):
       self.assertEqual(expr,
                        ent._to_pb(set_key=False).SerializePartialToString())
+
     class Foo(model.Model):
       pass
+
     k1 = model.Key(Foo, 1, namespace='a')
     k2 = model.Key(Foo, 2, namespace='b')
     mk1 = self.ctx._memcache_prefix + k1.urlsafe()
@@ -465,7 +476,7 @@ class ContextTests(test_utils.NDBTest):
     ent1 = Foo(key=key1, foo=42, bar='hello')
     ctx.put(ent1).get_result()
     ctx.set_memcache_policy(True)
-    ctx.get(key1).get_result() # Pull entity into memcache
+    ctx.get(key1).get_result()  # Pull entity into memcache
 
     model.Model._reset_kind_map()
     self.assertRaises(model.KindError, ctx.get(key1).get_result)
@@ -481,6 +492,7 @@ class ContextTests(test_utils.NDBTest):
 
   def testContext_MemcachePolicy(self):
     badkeys = []
+
     def tracking_add_async(*args, **kwds):
       try:
         res = save_add_async(*args, **kwds)
@@ -491,6 +503,7 @@ class ContextTests(test_utils.NDBTest):
       except Exception, err:
         track.append((args, kwds, None, err))
         raise
+
     @tasklets.tasklet
     def foo():
       k1, k2 = yield self.ctx.put(ent1), self.ctx.put(ent2)
@@ -572,9 +585,11 @@ class ContextTests(test_utils.NDBTest):
       self.assertTrue(key2 in self.ctx._cache)  # Whitebox.
       self.assertEqual(key1, key1a)
       self.assertEqual(key2, key2a)
+
       @tasklets.tasklet
       def callback(ent):
         return ent
+
       qry = query.Query(kind='Foo')
       results = yield self.ctx.map_query(qry, callback)
       self.assertEqual(results, [ent1, ent2])
@@ -596,6 +611,7 @@ class ContextTests(test_utils.NDBTest):
     @tasklets.tasklet
     def callback(ent):
       return ent.key.flat()[-1]
+
     @tasklets.tasklet
     def foo():
       yield self.create_entities()
@@ -621,6 +637,7 @@ class ContextTests(test_utils.NDBTest):
   def testContext_MapQuery_NonTaskletCallback(self):
     def callback(ent):
       return ent.key.flat()[-1]
+
     @tasklets.tasklet
     def foo():
       yield self.create_entities()
@@ -632,9 +649,11 @@ class ContextTests(test_utils.NDBTest):
 
   def testContext_MapQuery_CustomFuture(self):
     mfut = tasklets.QueueFuture()
+
     @tasklets.tasklet
     def callback(ent):
       return ent.key.flat()[-1]
+
     @tasklets.tasklet
     def foo():
       yield self.create_entities()
@@ -653,23 +672,28 @@ class ContextTests(test_utils.NDBTest):
 
   def testContext_MapQuery_KeysOnly(self):
     qo = query.QueryOptions(keys_only=True)
+
     @tasklets.tasklet
     def callback(key):
       return key.pairs()[-1]
+
     @tasklets.tasklet
     def foo():
       yield self.create_entities()
       qry = query.Query(kind='Foo')
       res = yield self.ctx.map_query(qry, callback, options=qo)
       raise tasklets.Return(res)
+
     res = foo().get_result()
     self.assertEqual(set(res), set([('Foo', 1), ('Foo', 2), ('Foo', 3)]))
 
   def testContext_MapQuery_Cursors(self):
     qo = query.QueryOptions(produce_cursors=True)
+
     @tasklets.tasklet
     def callback(ent):
       return ent.key.pairs()[-1]
+
     @tasklets.tasklet
     def foo():
       yield self.create_entities()
@@ -706,6 +730,7 @@ class ContextTests(test_utils.NDBTest):
       key = model.Key(flat=('Foo', 1))
       ent = model.Expando(key=key, bar=1)
       yield self.ctx.put(ent)
+
       @tasklets.tasklet
       def callback():
         ctx = tasklets.get_context()
@@ -721,9 +746,11 @@ class ContextTests(test_utils.NDBTest):
   def testContext_TransactionException(self):
     self.ExpectWarnings()
     key = model.Key('Foo', 1)
+
     @tasklets.tasklet
     def foo():
       ent = model.Expando(key=key, bar=1)
+
       @tasklets.tasklet
       def callback():
         yield ent.put_async()
@@ -735,9 +762,11 @@ class ContextTests(test_utils.NDBTest):
   def testContext_TransactionRollback(self):
     self.ExpectWarnings()
     key = model.Key('Foo', 1)
+
     @tasklets.tasklet
     def foo():
       ent = model.Expando(key=key, bar=1)
+
       @tasklets.tasklet
       def callback():
         yield ent.put_async()
@@ -752,11 +781,14 @@ class ContextTests(test_utils.NDBTest):
 
     class CustomException(Exception):
       pass
+
     def bad_transaction(*arg, **kwargs):
       return datastore_rpc.datastore_pb.Transaction()
+
     @tasklets.tasklet
     def foo():
       ent = model.Expando(key=key, bar=1)
+
       @tasklets.tasklet
       def callback():
         # Cause rollback to return an exception
@@ -775,9 +807,11 @@ class ContextTests(test_utils.NDBTest):
   def testContext_TransactionAddTask(self):
     self.ExpectWarnings()
     key = model.Key('Foo', 1)
+
     @tasklets.tasklet
     def foo():
       ent = model.Expando(key=key, bar=1)
+
       @tasklets.tasklet
       def callback():
         ctx = tasklets.get_context()
@@ -793,6 +827,7 @@ class ContextTests(test_utils.NDBTest):
 
     key1 = model.Key('Foo', 1)
     key2 = model.Key('Foo', 2)
+
     @tasklets.tasklet
     def tx():
       ctx = tasklets.get_context()
@@ -894,8 +929,10 @@ class ContextTests(test_utils.NDBTest):
 
   def testTransaction_OnCommit(self):
     self.ExpectWarnings()
+
     class Counter(model.Model):
       count = model.IntegerProperty(default=0)
+
     @model.transactional
     def trans1(fail=False, bad=None):
       tasklets.get_context().call_on_commit(lambda: log.append('A'))
@@ -922,7 +959,7 @@ class ContextTests(test_utils.NDBTest):
     # Raising callable in transaction.
     key = Counter().put()
     log = []
-    self.assertRaises(ZeroDivisionError, trans1, bad=lambda: 1/0)
+    self.assertRaises(ZeroDivisionError, trans1, bad=lambda: 1 / 0)
     self.assertEqual(key.get().count, 1)
     self.assertEqual(log, ['A'])
     # Bad callable in transaction.
@@ -938,7 +975,7 @@ class ContextTests(test_utils.NDBTest):
     # Raising callable outside transaction.
     log = []
     self.assertRaises(ZeroDivisionError,
-                      tasklets.get_context().call_on_commit, lambda: 1/0)
+                      tasklets.get_context().call_on_commit, lambda: 1 / 0)
     # Bad callable outside transaction.
     log = []
     self.assertRaises(TypeError, tasklets.get_context().call_on_commit, 42)
@@ -947,6 +984,7 @@ class ContextTests(test_utils.NDBTest):
     @tasklets.synctasklet
     def outer():
       ctx1 = tasklets.get_context()
+
       @tasklets.tasklet
       def inner():
         ctx2 = tasklets.get_context()
@@ -963,9 +1001,11 @@ class ContextTests(test_utils.NDBTest):
 
   def testExplicitTransactionClearsDefaultContext(self):
     old_ctx = tasklets.get_context()
+
     @tasklets.synctasklet
     def outer():
       ctx1 = tasklets.get_context()
+
       @tasklets.tasklet
       def inner():
         ctx = tasklets.get_context()
@@ -991,6 +1031,7 @@ class ContextTests(test_utils.NDBTest):
     # be satisfied from the cache, so the adapter we're testing will never get
     # called.
     ctx.set_cache_policy(lambda unused_key: False)
+
     @tasklets.tasklet
     def foo():
       # Foo class is declared in query_test, so let's get a unusual class name.
@@ -998,13 +1039,20 @@ class ContextTests(test_utils.NDBTest):
       ent1 = model.Expando(key=key1, foo=42, bar='hello')
       yield ctx.put(ent1)
       yield ctx.get(key1)
+
     self.assertRaises(model.KindError, foo().check_success)
 
   def testMemcachePolicy(self):
     # Bug reported by Jack Hebert.
-    class P(model.Model): pass
-    class Q(model.Model): pass
-    def policy(key): return key.kind() != 'P'
+    class P(model.Model):
+      pass
+
+    class Q(model.Model):
+      pass
+
+    def policy(key):
+      return key.kind() != 'P'
+
     self.ctx.set_cache_policy(policy)
     self.ctx.set_memcache_policy(policy)
     k1 = model.Key(P, 1)
@@ -1040,6 +1088,7 @@ class ContextTests(test_utils.NDBTest):
 
   def testMemcacheAPI(self):
     self.ExpectErrors()
+
     @tasklets.tasklet
     def foo():
       ctx = tasklets.get_context()
@@ -1106,12 +1155,15 @@ class ContextTests(test_utils.NDBTest):
     # See issue 94.  http://goo.gl/E7OBH
     # Install an error handler.
     save_create_rpc = memcache.create_rpc
+
     def fake_check_success(*args):
       raise apiproxy_errors.Error('fake error')
+
     def fake_create_rpc(*args, **kwds):
       rpc = save_create_rpc(*args, **kwds)
       rpc.check_success = fake_check_success
       return rpc
+
     try:
       memcache.create_rpc = fake_create_rpc
       val = self.ctx.memcache_get('key2').get_result()
@@ -1220,7 +1272,7 @@ class ContextTests(test_utils.NDBTest):
     def trans():
       bar = Bar.get_by_id('bar')
       bar.name = 'updated-bar'
-      bar.put_async() # PROBLEM IS HERE, with yield it properly works
+      bar.put_async()  # PROBLEM IS HERE, with yield it properly works
     model.transaction_async(trans).get_result()
 
     bar = bar.key.get()
@@ -1349,8 +1401,8 @@ class ContextTests(test_utils.NDBTest):
       ent = key.get(memcache_deadline=1)
       self.assertEqual(ent, None)
       # Three memcache calls should have been made (get, set, gets).
-      self.assertEqual(observed_deadlines, [1]*3)
-      self.assertEqual(observed_raises, ['raise']*3)
+      self.assertEqual(observed_deadlines, [1] * 3)
+      self.assertEqual(observed_raises, ['raise'] * 3)
 
     finally:
       memcache.create_rpc = orig_create_rpc
@@ -1369,12 +1421,14 @@ class ContextTests(test_utils.NDBTest):
     else:
       self.fail('Could not find an unused port in 10 tries')
     s.listen(1)
+
     def run():
       c, addr = s.accept()
       s.close()
       c.recv(1000)  # Throw away request.
       c.send('HTTP/1.0 200 Ok\r\n\r\n')  # Emptiest response.
       c.close()
+
     t = threading.Thread(target=run)
     t.setDaemon(True)
     t.start()
@@ -1394,7 +1448,7 @@ class ContextTests(test_utils.NDBTest):
       _use_cache = False
       blob = model.BlobProperty()
     small = Blobby(blob='x')
-    huge = Blobby(blob='x'*1000000)  # Fits in datastore, not in memcache
+    huge = Blobby(blob='x' * 1000000)  # Fits in datastore, not in memcache
     originals = [small, huge]
     keys = model.put_multi(originals)
     copies = model.get_multi(keys)
@@ -1418,8 +1472,10 @@ class ContextTests(test_utils.NDBTest):
 
   def testDatastoreConnectionIsRestored(self):
     # See issue 209.  http://goo.gl/7TEyM
+
     class TestData(model.Model):
       pass
+
     @tasklets.tasklet
     def txn():
       conn1 = datastore._GetConnection()
@@ -1428,6 +1484,7 @@ class ContextTests(test_utils.NDBTest):
       yield TestData().put_async()
       conn2 = datastore._GetConnection()
       self.assertEqual(conn1, conn2)
+
     @tasklets.synctasklet
     def many_txns():
       # Exactly how many transactions are needed to make this fail
@@ -1440,6 +1497,7 @@ class ContextTests(test_utils.NDBTest):
       yield ts
       conn_c = datastore._GetConnection()
       self.assertEqual(conn_b, conn_c)
+
     conn_before = datastore._GetConnection()
     many_txns()
     conn_after = datastore._GetConnection()
@@ -1449,10 +1507,12 @@ class ContextTests(test_utils.NDBTest):
     self.ctx.set_datastore_policy(True)
     self.ctx.set_cache_policy(False)
     self.ctx.set_memcache_policy(True)
+
     class EmptyModel(model.Model):
       pass
+
     key = EmptyModel().put()
-    self.ctx.get(key).get_result() # pull entity into memcache
+    self.ctx.get(key).get_result()  # pull entity into memcache
     self.ctx.set_cache_policy(True)
     f1, f2 = self.ctx.get(key), self.ctx.get(key)
     e1, e2 = f1.get_result(), f2.get_result()
@@ -1474,8 +1534,10 @@ class ContextFutureCachingTests(test_utils.NDBTest):
 
   def testGetFutureCachingOn(self):
     self.ctx.set_memcache_policy(False)
+
     class EmptyModel(model.Model):
       pass
+
     key = EmptyModel().put()
     MyAutoBatcher.reset_log()  # TODO Find out why put calls get_tasklet
     self.ctx.set_cache_policy(True)
@@ -1490,8 +1552,10 @@ class ContextFutureCachingTests(test_utils.NDBTest):
 
   def testGetFutureCachingOff(self):
     self.ctx.set_memcache_policy(False)
+
     class EmptyModel(model.Model):
       pass
+
     key = EmptyModel().put()
     MyAutoBatcher.reset_log()  # TODO Find out why put calls get_tasklet
     f1, f2 = self.ctx.get(key), self.ctx.get(key)
@@ -1530,6 +1594,7 @@ class ContextFutureCachingTests(test_utils.NDBTest):
     f4 = self.ctx.memcache_set(key, value, use_cache=True)
     self.assertFalse(f1 is f4,
                     'Context memcache get future cached after result known.')
+
 
 if __name__ == '__main__':
   unittest.main()

@@ -120,6 +120,12 @@ Running Tests
 
     where as above `GAE` should be set.
 
+-   To run a basic PEP8 check over the code, run
+
+    ```
+    tox -e lint
+    ```
+
 Contributor License Agreements
 ------------------------------
 

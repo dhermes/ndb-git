@@ -53,6 +53,7 @@ def subverting_aries_fix():
   a_lock1 = threading.Lock()
   a_lock2 = threading.Lock()
   a_lock3 = threading.Lock()
+
   class A(threading.Thread):
     def run(self):
       ctx = setup_context()

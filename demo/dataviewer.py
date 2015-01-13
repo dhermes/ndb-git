@@ -115,7 +115,7 @@ class DataViewer(webapp.RequestHandler):
 
 urls = [
   ('/dataviewer', DataViewer),
-  ]
+]
 
 app = webapp.WSGIApplication(urls)
 

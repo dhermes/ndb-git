@@ -13,6 +13,7 @@ install:
 
 script:
   - tox -e py27
+  - tox -e lint
 
 after_success:
   - tox -e coveralls

@@ -22,10 +22,12 @@ class QueryTests(test_utils.NDBTest):
 
     # Create class inside tests because kinds are cleared every test.
     global Foo
+
     class Foo(model.Model):
       name = model.StringProperty()
       rate = model.IntegerProperty()
       tags = model.StringProperty(repeated=True)
+
     self.create_entities()
 
   the_module = query
@@ -139,11 +141,13 @@ class QueryTests(test_utils.NDBTest):
       name = model.StringProperty()
       age = model.IntegerProperty('Age')
       rank = model.IntegerProperty()
+
       @classmethod
       def seniors(cls, min_age, min_rank):
         q = cls.query().filter(cls.age >= min_age, cls.rank <= min_rank)
         q = q.order(cls.name, -cls.age)
         return q
+
     q = Employee.seniors(42, 5)
     self.assertEqual(q.filters,
                      query.ConjunctionNode(
@@ -180,8 +184,10 @@ class QueryTests(test_utils.NDBTest):
 
   def testEmptyInFilter(self):
     self.ExpectWarnings()
+
     class Employee(model.Model):
       name = model.StringProperty()
+
     for arg in [], (), set(), frozenset():
       q = Employee.query(Employee.name.IN(arg))
       self.assertEqual(q.filters, query.FalseNode())
@@ -257,6 +263,7 @@ class QueryTests(test_utils.NDBTest):
     # Shouldn't be able to query for unindexed properties
     class SubModel(model.Model):
       booh = model.IntegerProperty(indexed=False)
+
     class Emp(model.Model):
       name = model.StringProperty()
       text = model.TextProperty()
@@ -264,6 +271,7 @@ class QueryTests(test_utils.NDBTest):
       sub = model.StructuredProperty(SubModel)
       struct = model.StructuredProperty(Foo, indexed=False)
       local = model.LocalStructuredProperty(Foo)
+
     Emp.query(Emp.name == 'a').fetch()  # Should pass
     self.assertRaises(datastore_errors.BadFilterError,
                       lambda: Emp.text == 'a')
@@ -293,6 +301,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testConstructor(self):
     self.ExpectWarnings()
+
     class Foo(model.Model):
       p = model.IntegerProperty('pp')  # Also check renaming.
       q = model.IntegerProperty(required=True)
@@ -378,6 +387,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testIndexOnlyPropertyValidation(self):
     self.ExpectWarnings()
+
     class Foo(model.Model):
       p = model.IntegerProperty('pp', indexed=False)  # Also check renaming.
       q = model.IntegerProperty(required=True)
@@ -408,6 +418,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testGroupByQuery(self):
     self.ExpectWarnings()
+
     class Foo(model.Model):
       p = model.IntegerProperty('pp')  # Also check renaming
       q = model.IntegerProperty(required=True)
@@ -444,6 +455,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testProjectionQuery(self):
     self.ExpectWarnings()
+
     class Foo(model.Model):
       p = model.IntegerProperty('pp')  # Also check renaming
       q = model.IntegerProperty(required=True)
@@ -528,13 +540,16 @@ class QueryTests(test_utils.NDBTest):
       foo = model.StringProperty()
       bar = model.StringProperty()
       beh = model.StringProperty()
+
     class Middle(model.Model):
       baz = model.StringProperty()
       inner = model.StructuredProperty(Inner)
       inners = model.StructuredProperty(Inner, repeated=True)
+
     class Outer(model.Model):
       name = model.StringProperty()
       middle = model.StructuredProperty(Middle, 'mid')
+
     one = Outer(name='one',
                 middle=Middle(baz='one',
                               inner=Inner(foo='foo', bar='bar'),
@@ -661,9 +676,11 @@ class QueryTests(test_utils.NDBTest):
 
   def testQueryForStructuredPropertyIn(self):
     self.ExpectWarnings()
+
     class Bar(model.Model):
       name = model.StringProperty()
       foo = model.StructuredProperty(Foo)
+
     a = Bar(name='a', foo=Foo(name='a'))
     a.put()
     b = Bar(name='b', foo=Foo(name='b'))
@@ -687,12 +704,15 @@ class QueryTests(test_utils.NDBTest):
     class Bar(model.Model):
       name = model.StringProperty()
       foo = model.StructuredProperty(Foo)
+
     class Bak(model.Model):
       bar = model.StructuredProperty(Bar)
+
     class Baz(model.Model):
       bar = model.StructuredProperty(Bar)
       bak = model.StructuredProperty(Bak)
       rank = model.IntegerProperty()
+
     b1 = Baz(bar=Bar(foo=Foo(name='a')))
     b1.put()
     b2 = Baz(bar=Bar(foo=Foo(name='b')), bak=Bak(bar=Bar(foo=Foo(name='c'))))
@@ -706,8 +726,10 @@ class QueryTests(test_utils.NDBTest):
     class Employee(model.Model):
       name = model.StringProperty()
       rank = model.IntegerProperty()
+
     class Manager(Employee):
       report = model.StructuredProperty(Employee, repeated=True)
+
     reports_a = []
     for i in range(3):
       e = Employee(name=str(i), rank=i)
@@ -750,9 +772,11 @@ class QueryTests(test_utils.NDBTest):
     class Event(model.Model):
       what = model.StringProperty()
       when = model.DateProperty()  # Has non-trivial _datastore_type().
+
     class Outer(model.Model):
       who = model.StringProperty()
       events = model.StructuredProperty(Event, repeated=True)
+
     q = Outer.query(Outer.events == Event(what='stuff',
                                           when=datetime.date.today()))
     q.fetch()  # Failed before the fix.
@@ -761,11 +785,14 @@ class QueryTests(test_utils.NDBTest):
     class A(model.Model):
       a1 = model.StringProperty()
       a2 = model.StringProperty()
+
     class B(model.Model):
       b1 = model.StructuredProperty(A)
       b2 = model.StructuredProperty(A)
+
     class C(model.Model):
       c = model.StructuredProperty(B)
+
     x = C(c=B(b1=A(a1='a1', a2='a2'), b2=A(a1='a3', a2='a4')))
     x.put()
     q = C.query(C.c == x.c)
@@ -774,11 +801,14 @@ class QueryTests(test_utils.NDBTest):
   def testQueryForWholeStructureNone(self):
     class X(model.Model):
       name = model.StringProperty()
+
     class Y(model.Model):
       x = model.StructuredProperty(X)
+
     y = Y(x=None)
     y.put()
-    q = Y.query(Y.x == None)
+    eq_rhs = None  # To avoid "== None" check; instead of "is None".
+    q = Y.query(Y.x == eq_rhs)
     self.assertEqual(q.fetch(), [y])
 
   def testQueryAncestorConsistentWithAppId(self):
@@ -839,6 +869,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testIterAsync(self):
     q = query.Query(kind='Foo').filter(Foo.tags == 'jill').order(Foo.name)
+
     @tasklets.synctasklet
     def foo():
       it = iter(q)
@@ -852,6 +883,7 @@ class QueryTests(test_utils.NDBTest):
   def testMap(self):
     q = query.Query(kind='Foo').filter(Foo.tags == 'jill').order(Foo.name)
     callback = lambda e: e.name
+
     @tasklets.tasklet
     def callback_async(e):
       yield tasklets.sleep(0.01)
@@ -865,10 +897,12 @@ class QueryTests(test_utils.NDBTest):
   def testMapAsync(self):
     q = query.Query(kind='Foo').filter(Foo.tags == 'jill').order(Foo.name)
     callback = lambda e: e.name
+
     @tasklets.tasklet
     def callback_async(e):
       yield tasklets.sleep(0.01)
       raise tasklets.Return(e.name)
+
     @tasklets.synctasklet
     def foo():
       fut = q.map_async(callback)
@@ -887,6 +921,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testFetchAsync(self):
     q = query.Query(kind='Foo').filter(Foo.tags == 'jill').order(Foo.name)
+
     @tasklets.synctasklet
     def foo():
       res = yield q.fetch_async(10)
@@ -1043,8 +1078,8 @@ class QueryTests(test_utils.NDBTest):
     q = Foo.query(Foo.name >= 'joe', Foo.tags == 'joe')
     qi = q.iter()
     qi.next()
-    properties=[model.IndexProperty(name='tags', direction='asc'),
-                model.IndexProperty(name='name', direction='asc')]
+    properties = [model.IndexProperty(name='tags', direction='asc'),
+                  model.IndexProperty(name='name', direction='asc')]
     self.assertEqual(qi.index_list(),
                      [model.IndexState(
                        definition=model.Index(kind='Foo',
@@ -1059,8 +1094,8 @@ class QueryTests(test_utils.NDBTest):
     q = Foo.query(Foo.name >= 'joe', Foo.tags == 'joe')
     qi = q.iter()
     list(qi)
-    properties=[model.IndexProperty(name='tags', direction='asc'),
-                model.IndexProperty(name='name', direction='asc')]
+    properties = [model.IndexProperty(name='tags', direction='asc'),
+                  model.IndexProperty(name='name', direction='asc')]
     self.assertEqual(qi.index_list(),
                      [model.IndexState(
                        definition=model.Index(kind='Foo',
@@ -1079,8 +1114,8 @@ class QueryTests(test_utils.NDBTest):
     qi.next()
     # TODO: This is a little odd, because that's not exactly the index
     # we created...?
-    properties=[model.IndexProperty(name='tags', direction='asc'),
-                model.IndexProperty(name='name', direction='desc')]
+    properties = [model.IndexProperty(name='tags', direction='asc'),
+                  model.IndexProperty(name='name', direction='desc')]
     self.assertEqual(qi.index_list(),
                      [model.IndexState(
                        definition=model.Index(kind='Foo',
@@ -1103,6 +1138,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testCountAsync(self):
     q = query.Query(kind='Foo').filter(Foo.tags == 'jill').order(Foo.name)
+
     @tasklets.synctasklet
     def foo():
       res = yield q.count_async(10)
@@ -1120,9 +1156,11 @@ class QueryTests(test_utils.NDBTest):
       name = model.StringProperty()
       rate = model.IntegerProperty()
       age = model.IntegerProperty()
+
     class Bar(model.Model):
       name = model.StringProperty()
       froo = model.StructuredProperty(Froo, repeated=True)
+
     b1 = Bar(name='b1', froo=[Froo(name='a', rate=1)])
     b1.put()
     b2 = Bar(name='b2', froo=[Froo(name='a', rate=1)])
@@ -1186,6 +1224,7 @@ class QueryTests(test_utils.NDBTest):
   def testMultiQueryIterator(self):
     q = query.Query(kind='Foo').filter(Foo.tags.IN(['joe', 'jill']))
     q = q.order(Foo.name)
+
     @tasklets.synctasklet
     def foo():
       it = iter(q)
@@ -1198,6 +1237,7 @@ class QueryTests(test_utils.NDBTest):
 
   def testMultiQueryIteratorUnordered(self):
     q = query.Query(kind='Foo').filter(Foo.tags.IN(['joe', 'jill']))
+
     @tasklets.synctasklet
     def foo():
       it = iter(q)
@@ -1357,9 +1397,11 @@ class QueryTests(test_utils.NDBTest):
   def testUnicode(self):
     class MyModel(model.Model):
       n = model.IntegerProperty(u'\u4321')
+
       @classmethod
       def _get_kind(cls):
         return u'\u1234'.encode('utf-8')
+
     a = MyModel(n=42)
     k = a.put()
     b = k.get()
@@ -1382,9 +1424,11 @@ class QueryTests(test_utils.NDBTest):
   def testKindlessQuery(self):
     class ParentModel(model.Model):
       a = model.StringProperty()
+
     class ChildModel(model.Model):
       b = model.StringProperty()
-    p = ParentModel(a= "Test1")
+
+    p = ParentModel(a="Test1")
     p.put()
     c = ChildModel(parent=p.key, b="Test2")
     c.put()
@@ -1698,7 +1742,7 @@ class QueryTests(test_utils.NDBTest):
       adatetime=datetime.datetime(2012, 2, 1, 14, 54, 0),
       adate=datetime.date(2012, 2, 2),
       atime=datetime.time(14, 54, 0),
-      )
+    )
     abar.put()
     bbar = Bar()
     bbar.put()
@@ -1757,8 +1801,10 @@ class QueryTests(test_utils.NDBTest):
   def testGqlExpandoInStructure(self):
     class Bar(model.Expando):
       pass
+
     class Baz(model.Model):
       bar = model.StructuredProperty(Bar)
+
     bazar = Baz(bar=Bar(bow=1, wow=2))
     bazar.put()
     bazone = Baz()
@@ -1908,8 +1954,10 @@ class QueryTests(test_utils.NDBTest):
     try:
       datastore_stub_util._MAX_QUERY_OFFSET = 10
       ndb = model
+
       class M(ndb.Model):
         a = ndb.IntegerProperty()
+
       ms = [M(a=i, id='%04d' % i) for i in range(33)]
       ks = ndb.put_multi(ms)
       q = M.query().order(M.a)

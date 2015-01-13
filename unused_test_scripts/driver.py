@@ -30,7 +30,7 @@ def one_thread(i, num):
   t0 = time.time()
   ans = urllib.urlopen('%s?num=%d' % (url, num)).read()
   t1 = time.time()
-  print '%d: %s (overall time %.3f seconds)' % (i, ans.strip(), t1-t0)
+  print '%d: %s (overall time %.3f seconds)' % (i, ans.strip(), t1 - t0)
 
 
 if __name__ == '__main__':

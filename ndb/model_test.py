@@ -454,6 +454,7 @@ property <
 >
 """
 
+
 class ModelTests(test_utils.NDBTest):
   def assertBetween(self, x, a, b):
     '''Asserts a <= x <= b.'''
@@ -526,8 +527,10 @@ class ModelTests(test_utils.NDBTest):
 
     # wrong key kind -- invalid
     k = model.Key('OtherModel', 'bar')
+
     class MyModel(model.Model):
       pass
+
     self.assertRaises(model.KindError, MyModel, key=k)
 
     # incomplete parent -- invalid
@@ -694,9 +697,11 @@ class ModelTests(test_utils.NDBTest):
     self.assertEqual(foo2._to_dict(), {'bar': 'bar1'})
     foo3 = Foo.query().get(projection=[Foo.baz])
     self.assertEqual(foo3._to_dict(), {'baz': ['baz1']})
+
     class Bar(model.Model):
       foo = model.StructuredProperty(Foo)
       baz = model.StringProperty()
+
     bar1 = Bar(foo=foo1, baz='baz2')
     bar1.put()
     bar2 = Bar.query().get(projection=['foo.bar'])
@@ -716,10 +721,12 @@ class ModelTests(test_utils.NDBTest):
                       q.fetch, projection=['name.foo'])
     self.assertRaises(model.InvalidPropertyError,
                       q.fetch, projection=['booh'])
+
     class Outer(model.Expando):
       inner = model.StructuredProperty(Inner)
       blob = model.BlobProperty()
       tag = model.StringProperty()
+
     q = Outer.query()
     q.fetch(projection=['tag', 'inner.name', 'inner.rank', 'whatever'])
     self.assertRaises(model.InvalidPropertyError,
@@ -786,34 +793,35 @@ class ModelTests(test_utils.NDBTest):
       t=datetime.time(),
       u=TESTUSER,
       xy=AMSTERDAM,
-      )
+    )
     m2.put()
+    NULL_VAL = None  # To avoid "== None" check; instead of "is None".
     q = MyModel.query(
-      MyModel.b == None,
-      MyModel.bb == None,
-      MyModel.d == None,
-      MyModel.f == None,
-      MyModel.i == None,
-      MyModel.k == None,
-      MyModel.s == None,
-      MyModel.t == None,
-      MyModel.u == None,
-      MyModel.xy == None,
-      )
+      MyModel.b == NULL_VAL,
+      MyModel.bb == NULL_VAL,
+      MyModel.d == NULL_VAL,
+      MyModel.f == NULL_VAL,
+      MyModel.i == NULL_VAL,
+      MyModel.k == NULL_VAL,
+      MyModel.s == NULL_VAL,
+      MyModel.t == NULL_VAL,
+      MyModel.u == NULL_VAL,
+      MyModel.xy == NULL_VAL,
+    )
     r = q.fetch()
     self.assertEqual(r, [m1])
     qq = [
-      MyModel.query(MyModel.b != None),
-      MyModel.query(MyModel.bb != None),
-      MyModel.query(MyModel.d != None),
-      MyModel.query(MyModel.f != None),
-      MyModel.query(MyModel.i != None),
-      MyModel.query(MyModel.k != None),
-      MyModel.query(MyModel.s != None),
-      MyModel.query(MyModel.t != None),
-      MyModel.query(MyModel.u != None),
-      MyModel.query(MyModel.xy != None),
-      ]
+      MyModel.query(MyModel.b != NULL_VAL),
+      MyModel.query(MyModel.bb != NULL_VAL),
+      MyModel.query(MyModel.d != NULL_VAL),
+      MyModel.query(MyModel.f != NULL_VAL),
+      MyModel.query(MyModel.i != NULL_VAL),
+      MyModel.query(MyModel.k != NULL_VAL),
+      MyModel.query(MyModel.s != NULL_VAL),
+      MyModel.query(MyModel.t != NULL_VAL),
+      MyModel.query(MyModel.u != NULL_VAL),
+      MyModel.query(MyModel.xy != NULL_VAL),
+    ]
     for q in qq:
       r = q.fetch()
       self.assertEqual(r, [m2], str(q))
@@ -1034,18 +1042,22 @@ class ModelTests(test_utils.NDBTest):
   def testKeyProperty(self):
     class RefModel(model.Model):
       pass
+
     class FancyModel(model.Model):
       @classmethod
       def _get_kind(cls):
         return 'Fancy'
+
     class FancierModel(model.Model):
       @classmethod
       def _get_kind(cls):
         return u'Fancier'
+
     class FanciestModel(model.Model):
       @classmethod
       def _get_kind(cls):
         return '\xff'
+
     class MyModel(model.Model):
       basic = model.KeyProperty(kind=None)
       ref = model.KeyProperty(kind=RefModel)
@@ -1055,6 +1067,7 @@ class ModelTests(test_utils.NDBTest):
       fancier = model.KeyProperty(kind=FancierModel)
       fanciest = model.KeyProperty(kind=FanciestModel)
       faanceest = model.KeyProperty(kind=u'\xff')
+
     a = MyModel(basic=model.Key('Foo', 1),
                 ref=model.Key(RefModel, 1),
                 refs=[model.Key(RefModel, 2), model.Key(RefModel, 3)],
@@ -1084,6 +1097,7 @@ class ModelTests(test_utils.NDBTest):
   def testKeyPropertyPositionalKind(self):
     class RefModel(model.Model):
       pass
+
     class MyModel(model.Model):
       ref0 = model.KeyProperty('REF0')
       ref1 = model.KeyProperty(RefModel)
@@ -1170,9 +1184,11 @@ class ModelTests(test_utils.NDBTest):
         raise datastore_errors.BadValueError('%s does not start with "a"' %
                                              prop._name)
       return value
+
     class MyModel(model.Model):
       a = model.StringProperty(validator=my_validator)
       foos = model.StringProperty(validator=my_validator, repeated=True)
+
     m = MyModel()
     m.a = 'ABC'
     self.assertEqual(m.a, 'abc')
@@ -1396,21 +1412,24 @@ class ModelTests(test_utils.NDBTest):
                                         datetime.datetime(1995, 4, 15, 5, 0, 0))
 
   def testDateProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.DateProperty,
-                                        lambda: datetime.datetime.utcnow().date(),
-                                        datetime.date(1982, 12, 1),
-                                        datetime.date(1995, 4, 15))
+    self.MultiDateAndOrTimePropertyTest(
+        model.DateProperty,
+        lambda: datetime.datetime.utcnow().date(),
+        datetime.date(1982, 12, 1),
+        datetime.date(1995, 4, 15))
 
   def testTimeProperty(self):
-    self.MultiDateAndOrTimePropertyTest(model.TimeProperty,
-                                        lambda: datetime.datetime.utcnow().time(),
-                                        datetime.time(9, 0, 0),
-                                        datetime.time(5, 0, 0, 500))
+    self.MultiDateAndOrTimePropertyTest(
+        model.TimeProperty,
+        lambda: datetime.datetime.utcnow().time(),
+        datetime.time(9, 0, 0),
+        datetime.time(5, 0, 0, 500))
 
   def testStructuredProperty(self):
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.StructuredProperty(Address)
@@ -1462,9 +1481,11 @@ property <
     class A(model.Model):
       name = model.StringProperty()
       extra = model.StringProperty()
+
     class B(model.Model):
       sp = model.StructuredProperty(A, repeated=True)
       lsp = model.LocalStructuredProperty(A, repeated=True)
+
     ent = B(
       sp=[A(name='sp0', extra='x'), A(name='sp1', extra='y')],
       lsp=[A(name='lsp0', extra='xx'), A(name='lsp1', extra='yy')])
@@ -1501,13 +1522,17 @@ property <
     # Test handling for structured subproperty (ignore with warning).
     # See issue 220.  http://goo.gl/wh06E
     self.ExpectWarnings()
+
     class Sub(model.Model):
       val = model.IntegerProperty()
+
     class A(model.Model):
       name = model.StringProperty()
       extra = model.StructuredProperty(Sub)
+
     class B(model.Model):
       sp = model.StructuredProperty(A, repeated=True)
+
     ent = B(sp=[A(name='x', extra=Sub(val=1)), A(name='y', extra=Sub(val=2))])
     key = ent.put()
     del A.extra
@@ -1519,9 +1544,11 @@ property <
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class AddressPair(model.Model):
       home = model.StructuredProperty(Address)
       work = model.StructuredProperty(Address)
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.StructuredProperty(AddressPair)
@@ -1557,7 +1584,7 @@ property <
     p3 = Person(first_name="Alice", last_name="B")
     p4 = Person(first_name="Peter", last_name="Q")
 
-    orig = CustomObject(p1=[p1,p2], p2=[p3,p4])
+    orig = CustomObject(p1=[p1, p2], p2=[p3, p4])
     copy = CustomObject._from_pb(orig._to_pb())
 
     self.assertEqual("Bob", copy.p1[0].first_name)
@@ -1573,9 +1600,11 @@ property <
     class Person(model.Model):
       first_name = model.StringProperty()
       last_name = model.StringProperty()
+
     class PersonPhone(model.Model):
       person = model.StructuredProperty(Person)
       phone = model.StringProperty()
+
     class Phonebook(model.Model):
       numbers = model.StructuredProperty(PersonPhone, repeated=True)
 
@@ -1590,7 +1619,6 @@ property <
     self.assertEqual(len(ent.numbers), 1)
     self.assertEqual(ent.numbers[0].person.last_name, 'Smith')
     self.assertEqual(ent.numbers[0].phone, '1-212-555-1212')
-
 
   def testRepeatedNestedStructuredPropertyWithEmptyModels(self):
     class F(model.Model):
@@ -1621,18 +1649,15 @@ property <
         return (len(self.a) == len(other.a)
                 and all(a == b for a, b in zip(self.a, other.a)))
 
-    orig = Foo(a=[A(),
-                  A(b=1,
-                    c="a",
-                    d=None),
-                  A(b=2,
-                    d=D(e="hi",
-                        f=F(g="hello"))),
-                  A(b=None,
-                    c="b",
-                    d=D(e="bye")),
-                  A(b=3)
-                 ])
+    d1 = D(e="hi", f=F(g="hello"))
+    a_values = [
+      A(),
+      A(b=1, c="a", d=None),
+      A(b=2, d=d1),
+      A(b=None, c="b", d=D(e="bye")),
+      A(b=3),
+    ]
+    orig = Foo(a=a_values)
     pb = orig._to_pb()
     copy = Foo._from_pb(pb)
     self.assertEqual(orig, copy)
@@ -1803,7 +1828,7 @@ property <
 
       def __eq__(self, other):
         return (len(self.a) == len(other.a)
-                and all(a == b for a,b in zip(self.a, other.a)))
+                and all(a == b for a, b in zip(self.a, other.a)))
 
     orig = Foo(a=[A(b=None,
                     c=1,
@@ -1863,9 +1888,11 @@ property <
   def testRecursiveStructuredProperty(self):
     class Node(model.Model):
       name = model.StringProperty()
+
     Node.left = model.StructuredProperty(Node)
     Node.right = model.StructuredProperty(Node, 'rite')
     Node._fix_up_properties()
+
     class Tree(model.Model):
       root = model.StructuredProperty(Node)
 
@@ -1930,9 +1957,11 @@ property <
   def testUnicodeRenamedProperty(self):
     class UModel(model.Model):
       val = model.StringProperty(u'\u00fc')
+
       @classmethod
       def _get_kind(cls):
         return u'UModel'  # Pure ASCII Unicode kind string is find.
+
     u = UModel(val='abc')
     u.put()
     v = u.key.get()
@@ -1943,20 +1972,25 @@ property <
     def helper():
       class UModel(model.Model):
         val = model.StringProperty()
+
         @classmethod
         def _get_kind(cls):
           return u'\u00fcModel'
+
     self.assertRaises(model.KindError, helper)
 
   def testRenamedStructuredProperty(self):
     uhome = u'hom\u00e9'
     uhome_enc_repr = r'hom\303\251'
+
     class Address(model.Model):
       st = model.StringProperty('street')
       ci = model.StringProperty('city')
+
     class AddressPair(model.Model):
       ho = model.StructuredProperty(Address, uhome)
       wo = model.StructuredProperty(Address, 'work')
+
     class Person(model.Model):
       na = model.StringProperty('name')
       ad = model.StructuredProperty(AddressPair, 'address')
@@ -1981,15 +2015,20 @@ property <
 
   def testKindMap(self):
     model.Model._reset_kind_map()
+
     class A1(model.Model):
       pass
+
     def get_kind_map():
       # Return the kind map with __* removed.
       d = model.Model._kind_map
       return dict(kv for kv in d.iteritems() if not kv[0].startswith('__'))
+
     self.assertEqual(get_kind_map(), {'A1': A1})
+
     class A2(model.Model):
       pass
+
     self.assertEqual(get_kind_map(), {'A1': A1, 'A2': A2})
 
   def testMultipleProperty(self):
@@ -2010,6 +2049,7 @@ property <
     class Address(model.Model):
       label = model.StringProperty()
       line = model.StringProperty(repeated=True)
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.StructuredProperty(Address)
@@ -2029,6 +2069,7 @@ property <
     class Address(model.Model):
       label = model.StringProperty()
       text = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.StructuredProperty(Address, repeated=True)
@@ -2050,10 +2091,13 @@ property <
   def testCannotMultipleInMultiple(self):
     class Inner(model.Model):
       tags = model.StringProperty(repeated=True)
+
     self.assertRaises(TypeError,
                       model.StructuredProperty, Inner, repeated=True)
+
     class Outer(model.Model):
       inner = model.StructuredProperty(Inner)
+
     self.assertRaises(TypeError,
                       model.StructuredProperty, Outer, repeated=True)
     try:
@@ -2069,11 +2113,13 @@ property <
       street = model.StringProperty()
       city = model.StringProperty()
       zipcode = model.IntegerProperty()
+
     class Person(model.Model):
       address = model.StructuredProperty(Address)
       age = model.IntegerProperty()
       name = model.StringProperty()
       k = model.KeyProperty()
+
     k = model.Key(flat=['Person', 42])
     p = Person()
     p.key = k
@@ -2093,16 +2139,19 @@ property <
     class Tag(model.Model):
       names = model.StringProperty(repeated=True)
       ratings = model.IntegerProperty(repeated=True)
+
     class Address(model.Model):
       line = model.StringProperty(repeated=True)
       city = model.StringProperty()
       zipcode = model.IntegerProperty()
       tags = model.StructuredProperty(Tag)
+
     class Person(model.Model):
       address = model.StructuredProperty(Address)
       age = model.IntegerProperty(repeated=True)
       name = model.StringProperty()
       k = model.KeyProperty()
+
     k = model.Key(flat=['Person', 42])
     p = Person(name='White House', k=k, age=[210, 211],
                address=Address(line=['1600 Pennsylvania', 'Washington, DC'],
@@ -2155,16 +2204,18 @@ property <
     class MySubmodel(model.Model):
       foo = model.StringProperty()
       bar = model.IntegerProperty()
+
     class MyModel(model.Model):
       a = model.StructuredProperty(MySubmodel)
       b = model.LocalStructuredProperty(MySubmodel, repeated=True)
       c = model.StructuredProperty(MySubmodel)
       d = model.LocalStructuredProperty(MySubmodel)
       e = model.StructuredProperty(MySubmodel, repeated=True)
+
     x = MyModel(a=MySubmodel(foo='foo', bar=42),
                 b=[MySubmodel(foo='f'), MySubmodel(bar=4)])
     self.assertEqual({'a': {'foo': 'foo', 'bar': 42},
-                      'b': [{'foo': 'f', 'bar': None,},
+                      'b': [{'foo': 'f', 'bar': None},
                             {'foo': None, 'bar': 4}],
                       'c': None,
                       'd': None,
@@ -2174,11 +2225,13 @@ property <
 
   def testModelPickling(self):
     global MyModel
+
     class MyModel(model.Model):
       name = model.StringProperty()
       tags = model.StringProperty(repeated=True)
       age = model.IntegerProperty()
       other = model.KeyProperty()
+
     my = MyModel(name='joe', tags=['python', 'ruby'], age=42,
                  other=model.Key(MyModel, 42))
     for proto in 0, 1, 2:
@@ -2188,8 +2241,10 @@ property <
 
   def testRejectOldPickles(self):
     global MyModel
+
     class MyModel(db.Model):
       name = db.StringProperty()
+
     dumped = []
     for proto in 0, 1, 2:
       x = MyModel()
@@ -2201,8 +2256,10 @@ property <
       db.put(x)
       s = pickle.dumps(x, proto)
       dumped.append(s)
+
     class MyModel(model.Model):
       name = model.StringProperty()
+
     for s in dumped:
       self.assertRaises(Exception, pickle.loads, s)
 
@@ -2210,6 +2267,7 @@ property <
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.StructuredProperty(Address)
@@ -2256,21 +2314,25 @@ property <
       text = model.TextProperty()
     small = Biggy(blob='xyz', text=u'abc')
     self.assertEqual(repr(small), "Biggy(blob='xyz', text=u'abc')")
-    large = Biggy(blob='x'*500, text='a'*500)
+    large = Biggy(blob='x' * 500, text='a' * 500)
     self.assertEqual(repr(large),
-                     "Biggy(blob='%s', text='%s')" % ('x'*500, 'a'*500))
-    huge = Biggy(blob='x'*1000, text='a'*1000)
-    self.assertEqual(repr(huge),
-                     "Biggy(blob='%s...', text='%s...')" % ('x'*499, 'a'*499))
+                     "Biggy(blob='%s', text='%s')" % ('x' * 500, 'a' * 500))
+    huge = Biggy(blob='x' * 1000, text='a' * 1000)
+    self.assertEqual(
+      repr(huge),
+      "Biggy(blob='%s...', text='%s...')" % ('x' * 499, 'a' * 499))
 
   def testModelRepr_CustomRepr(self):
     # Demonstrate how to override a property's repr.
     class MyJsonProperty(model.JsonProperty):
+
       def _value_to_repr(self, value):
         val = self._opt_call_from_base_type(value)
         return json.dumps(val, indent=2)
+
     class Jumpy(model.Model):
       jsn = MyJsonProperty()
+
     jump = Jumpy(jsn={'a': [123, {'b': ['xyz', 'pqr']}]})
     self.assertEqual(repr(jump),
                      'Jumpy(jsn={\n'
@@ -2407,12 +2469,12 @@ property <
       istr = model.StringProperty()  # Defaults to indexed=True.
       ugen = model.GenericProperty(indexed=False)
       igen = model.GenericProperty(indexed=True)
-    largeblob = 'x'*500
-    toolargeblob = 'x'*501
-    hugeblob = 'x'*10000
-    largetext = u'\u1234'*500
-    toolargetext = u'\u1234'*500 + 'x'
-    hugetext = u'\u1234'*10000
+    largeblob = 'x' * 500
+    toolargeblob = 'x' * 501
+    hugeblob = 'x' * 10000
+    largetext = u'\u1234' * 500
+    toolargetext = u'\u1234' * 500 + 'x'
+    hugetext = u'\u1234' * 10000
     ent = MyModel()
     # These should all fail:
     self.assertRaises(datastore_errors.BadValueError,
@@ -2498,6 +2560,7 @@ property <
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.LocalStructuredProperty(Address)
@@ -2551,6 +2614,7 @@ property <
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.LocalStructuredProperty(Address, compressed=True)
@@ -2577,6 +2641,7 @@ property <
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.LocalStructuredProperty(Address, repeated=True)
@@ -2606,6 +2671,7 @@ property <
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.LocalStructuredProperty(Address, repeated=True,
@@ -2635,9 +2701,12 @@ property <
   def testLocalStructuredPropertyRepeatedRepeated(self):
     class Inner(model.Model):
       a = model.IntegerProperty(repeated=True)
+
     self.assertTrue(Inner._has_repeated)
+
     class Outer(model.Model):
       b = model.LocalStructuredProperty(Inner, repeated=True)
+
     self.assertTrue(Inner._has_repeated)
     x = Outer(b=[Inner(a=[1, 2]), Inner(a=[3, 4, 5])])
     k = x.put()
@@ -2648,8 +2717,10 @@ property <
   def testLocalStructuredPropertyRepeatedNone(self):
     class Inner(model.Model):
       a = model.IntegerProperty()
+
     class Outer(model.Model):
       b = model.LocalStructuredProperty(Inner, repeated=True)
+
     x = Outer()
     x.b.append(None)
     # Should raise "Expected Inner instance, got None"
@@ -2658,8 +2729,10 @@ property <
   def testLocalStructuredPropertyWithoutKey(self):
     class Inner(model.Model):
       pass
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(Inner, keep_keys=False)
+
     outer1 = Outer(inner=Inner(key=model.Key(Inner, None)))
     key1 = outer1.put()
     self.assertEqual(outer1.inner.key, None)
@@ -2678,8 +2751,10 @@ property <
   def testLocalStructuredPropertyWithKey(self):
     class Inner(model.Model):
       pass
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(Inner, keep_keys=True)
+
     outer1 = Outer(inner=Inner())
     key1 = outer1.put()  # This forces an incomplete key on inner
     self.assertEqual(outer1.inner.key.id(), None)
@@ -2723,8 +2798,10 @@ property <
   def testLocalStructuredPropertyKeyDisagreement(self):
     class Inner(model.Model):
       pass
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(Inner, keep_keys=True)
+
     outer1 = Outer(inner=Inner())
     outer2 = Outer(inner=Inner(id=42))
     key1 = outer1.put()
@@ -2735,8 +2812,10 @@ property <
     # This is a dead end.
     class AnotherInner(model.Model):
       pass
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(AnotherInner, keep_keys=True)
+
     other1 = key1.get()
     self.assertRaises(model.KindError, lambda: other1.inner)
     self.assertRaises(model.KindError, other1.put)
@@ -2747,8 +2826,10 @@ property <
     # This works.
     class YetAnotherInner(model.Model):
       pass
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(YetAnotherInner, keep_keys=False)
+
     another1 = key1.get()
     self.assertTrue(isinstance(another1.inner, YetAnotherInner))
     self.assertEqual(another1.inner.key, None)
@@ -2932,12 +3013,16 @@ property <
   def testExpandoLocalStructuredProperty(self):
     class Inner(model.Model):
       name = model.StringProperty()
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(Inner)
+
     x = Outer(inner=Inner(name='x'))
     key = x.put()
+
     class Outer(model.Expando):
       pass
+
     y = key.get()
     self.assertEqual(y.inner, model.Expando(name='x'))
     y.inner.name = 'x2'
@@ -2952,12 +3037,16 @@ property <
   def testExpandoLocalStructuredPropertyKeepKeys(self):
     class Inner(model.Model):
       name = model.StringProperty()
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(Inner, keep_keys=True)
+
     x = Outer(inner=Inner(name='x'))
     key = x.put()
+
     class Outer(model.Expando):
       pass
+
     y = key.get()
     self.assertEqual(y.inner, Inner(name='x', key=model.Key(Inner, None)))
     y.inner.name = 'x2'
@@ -2983,8 +3072,10 @@ property <
   def testExpandoLocalStructuredPropertyBadKey(self):
     class Inner(model.Model):
       name = model.StringProperty()
+
     class Outer(model.Model):
       inner = model.LocalStructuredProperty(Inner, keep_keys=True)
+
     x = Outer(inner=Inner(name='x'))
     pb = x._to_pb()
     v = pb.raw_property(0).value()
@@ -3007,7 +3098,7 @@ property <
       comps = model.GenericProperty(compressed=True, repeated=True)
     self.assertFalse(Goo.comp._indexed)
     self.assertFalse(Goo.comps._indexed)
-    a = Goo(comp='fizzy', comps=['x'*1000, 'y'*1000])
+    a = Goo(comp='fizzy', comps=['x' * 1000, 'y' * 1000])
     a.put()
     self.assertTrue(isinstance(a._values['comp'].b_val,
                                model._CompressedValue))
@@ -3020,9 +3111,9 @@ property <
     self.assertTrue(a is not b)
     # Extra-double-check.
     self.assertEqual(b.comp, 'fizzy')
-    self.assertEqual(b.comps, ['x'*1000, 'y'*1000])
+    self.assertEqual(b.comps, ['x' * 1000, 'y' * 1000])
     # Now try some non-string values.
-    x = Goo(comp=42, comps=[u'\u1234'*1000, datetime.datetime(2012, 2, 23)])
+    x = Goo(comp=42, comps=[u'\u1234' * 1000, datetime.datetime(2012, 2, 23)])
     x.put()
     self.assertFalse(isinstance(x._values['comp'].b_val,
                                 model._CompressedValue))
@@ -3036,10 +3127,13 @@ property <
   def testExpandoReadsCompressed(self):
     class Goo(model.Model):
       comp = model.BlobProperty(compressed=True)
+
     x = Goo(comp='foo')
     x.put()
+
     class Goo(model.Expando):
       pass
+
     y = x.key.get()
     self.assertTrue(y._properties['comp']._compressed)
     self.assertEqual(y.comp, 'foo')
@@ -3094,7 +3188,7 @@ property <
       start = model.IntegerProperty()
       end = model.IntegerProperty()
       cp = model.ComputedProperty(lambda self: range(self.start, self.end),
-                                   repeated=True)
+                                  repeated=True)
     e = StopWatch(start=1, end=10)
     self.assertEqual(e.cp, [1, 2, 3, 4, 5, 6, 7, 8, 9])
     k = e.put()
@@ -3111,8 +3205,10 @@ property <
       arg = model.IntegerProperty()
       comp1 = model.ComputedProperty(lambda ent: 1)
       comp2 = model.ComputedProperty(lambda ent: 2)
+
     class Outer(model.Model):
       wrap = model.StructuredProperty(Inner, repeated=True)
+
     orig = Outer(wrap=[Inner(arg=1), Inner(arg=2)])
     orig.put()
     copy = Outer.query().get()
@@ -3129,7 +3225,7 @@ property <
     class Demo(model.Model):
       bytes = model.BlobProperty()
       text = model.TextProperty()
-    x = Demo(bytes='x'*1000, text=u'a'*1000)
+    x = Demo(bytes='x' * 1000, text=u'a' * 1000)
     key = x.put()
     y = key.get()
     self.assertEqual(x, y)
@@ -3140,6 +3236,7 @@ property <
     class Address(model.Model):
       label = model.StringProperty()
       text = model.StringProperty()
+
     class Person(model.Model):
       name = model.StringProperty()
       address = model.StructuredProperty(Address, repeated=True)
@@ -3199,6 +3296,7 @@ property <
   def testGetOrInsertAsync(self):
     class Mod(model.Model):
       data = model.StringProperty()
+
     @tasklets.tasklet
     def foo():
       ent = yield Mod.get_or_insert_async('a', data='hello')
@@ -3210,6 +3308,7 @@ property <
   def testGetOrInsertAsyncWithParent(self):
     class Mod(model.Model):
       data = model.StringProperty()
+
     @tasklets.tasklet
     def foo():
       parent = model.Key(flat=('Foo', 1))
@@ -3482,8 +3581,10 @@ property <
     ctx.set_memcache_policy(True)
     ctx.set_memcache_timeout_policy(0)
     # Create an entity and put it in the caches.
+
     class MyModel(model.Model):
       name = model.StringProperty()
+
     key = model.Key(MyModel, 'yo')
     ent = MyModel(key=key, name='yo')
     ent.put(use_memcache=False)  # Don't lock memcache.
@@ -3557,18 +3658,23 @@ property <
     # Mock memcache.cas_multi_async().
     save_memcache_cas_multi_async = ctx._memcache.cas_multi_async
     memcache_args_log = []
+
     def mock_memcache_cas_multi_async(*args, **kwds):
       memcache_args_log.append((args, kwds))
       return save_memcache_cas_multi_async(*args, **kwds)
+
     # Mock conn.async_put().
     save_conn_async_put = ctx._conn.async_put
     conn_args_log = []
+
     def mock_conn_async_put(*args, **kwds):
       conn_args_log.append((args, kwds))
       return save_conn_async_put(*args, **kwds)
+
     # Create some entities.
     class MyModel(model.Model):
       name = model.StringProperty()
+
     e1 = MyModel(name='1')
     e2 = MyModel(name='2')
     e3 = MyModel(name='3')
@@ -3653,9 +3759,11 @@ property <
     class M(model.Model):
       s = model.StringProperty()
       _use_cache = False
+
       @classmethod
       def _use_memcache(cls, key):
         return bool(key.string_id())
+
       @classmethod
       def _use_datastore(cls, key):
         return not bool(key.string_id())
@@ -3689,8 +3797,10 @@ property <
       # Test that namespaces survive serialization
       namespace_manager.set_namespace('ns2')
       km = model.Key('M', 1, namespace='ns4')
+
       class M(model.Model):
         keys = model.KeyProperty(repeated=True)
+
       m1 = M(keys=[k1, k2, k3], key=km)
       pb = m1._to_pb()
       namespace_manager.set_namespace('ns3')
@@ -3703,8 +3813,10 @@ property <
       # Now test the same thing for Expando
       namespace_manager.set_namespace('ns2')
       ke = model.Key('E', 1)
+
       class E(model.Expando):
         pass
+
       e1 = E(keys=[k1, k2, k3], key=ke)
       pb = e1._to_pb()
       namespace_manager.set_namespace('ns3')
@@ -3775,16 +3887,19 @@ property <
     # This tests @model.transactional and model.in_transaction(), and
     # indirectly context.Context.in_transaction().
     logs = []
+
     @model.transactional
     def foo(a, b):
       self.assertTrue(model.in_transaction())
       logs.append(tasklets.get_context()._conn)  # White box
       return a + b
+
     @model.transactional
     def bar(a):
       self.assertTrue(model.in_transaction())
       logs.append(tasklets.get_context()._conn)  # White box
       return foo(a, 42)
+
     before = tasklets.get_context()._conn
     self.assertFalse(model.in_transaction())
     x = bar(100)
@@ -3820,26 +3935,32 @@ property <
       self.assertTrue(model.in_transaction())
       ctx = tasklets.get_context()
       orig_async_commit = ctx._conn.async_commit
+
       def wrap_async_commit(options):
         log.append(options)
         return orig_async_commit(options)
+
       ctx._conn.async_commit = wrap_async_commit
+
     log = []
     callback1(log)
     self.assertEqual(
       log,
-      [context.TransactionOptions(propagation=
-                                  context.TransactionOptions.ALLOWED)])
+      [context.TransactionOptions(
+        propagation=context.TransactionOptions.ALLOWED)])
 
     @model.transactional(retries=42)
     def callback2(log):
       self.assertTrue(model.in_transaction())
       ctx = tasklets.get_context()
       orig_async_commit = ctx._conn.async_commit
+
       def wrap_async_commit(options):
         log.append(options)
         return orig_async_commit(options)
+
       ctx._conn.async_commit = wrap_async_commit
+
     log = []
     callback2(log)
     self.assertEqual(len(log), 1)
@@ -3850,10 +3971,13 @@ property <
       self.assertTrue(model.in_transaction())
       ctx = tasklets.get_context()
       orig_async_commit = ctx._conn.async_commit
+
       def wrap_async_commit(options):
         log.append(options)
         return orig_async_commit(options)
+
       ctx._conn.async_commit = wrap_async_commit
+
     log = []
     callback3()
     self.assertEqual(len(log), 1)
@@ -3863,8 +3987,10 @@ property <
     # Test @transactional(propagation=<flag>) for all supported <flag>
     # values and in_transaction() states.
     self.ExpectWarnings()
+
     class Counter(model.Model):
       count = model.IntegerProperty(default=0)
+
     def increment(key, delta=1):
       ctx = tasklets.get_context()
       ent = key.get()
@@ -3986,13 +4112,17 @@ property <
     # Test @non_transactional() with all possible formats and all
     # possible values for allow_existing and in_transaction().
     self.ExpectWarnings()
+
     class Counter(model.Model):
       count = model.IntegerProperty(default=0)
+
     class DbCounter(db.Model):
       count = db.IntegerProperty(default=0)
+
       @classmethod
       def kind(cls):
         return Counter._get_kind()
+
     def increment(key, delta=1):
       ctx = tasklets.get_context()
       ent = key.get()
@@ -4002,6 +4132,7 @@ property <
         ent.count += delta
       ent.put()
       return (ent.key, ctx)
+
     def increment_db(key, delta=1):
       ent = db.get(key.to_old_key())
       if ent is None:
@@ -4103,9 +4234,11 @@ property <
       b = model.BooleanProperty()
       i = model.IntegerProperty()
       g = model.GeoPtProperty()
+
       @model.ComputedProperty
       def c(self):
         return self.i + 1
+
       u = model.UserProperty()
 
     values = {
@@ -4245,10 +4378,12 @@ property <
   def testCompressedProperty_Repr(self):
     class Foo(model.Model):
       name = model.StringProperty()
+
     class M(model.Model):
       b = model.BlobProperty(compressed=True)
       t = model.TextProperty(compressed=True)
       l = model.LocalStructuredProperty(Foo, compressed=True)
+
     x = M(b='b' * 100, t=u't' * 100, l=Foo(name='joe'))
     x.put()
     y = x.key.get()
@@ -4263,10 +4398,13 @@ property <
   def testCorruption(self):
     # Thanks to Ricardo Banffy
     class Evil(model.Model):
+
       x = model.IntegerProperty()
+
       def __init__(self, *a, **k):
         super(Evil, self).__init__(*a, **k)
         self.x = 42
+
     e = Evil()
     e.x = 50
     pb = e._to_pb()
@@ -4288,6 +4426,7 @@ property <
         self.assertEqual(size, self.size)
         self.assertEqual(max, self.max)
         self.assertEqual(parent, self.parent)
+
       @classmethod
       def _post_allocate_ids_hook(cls, size, max, parent, future):
         self.post_counter += 1
@@ -4310,20 +4449,24 @@ property <
     # See issue 58.  http://goo.gl/hPN6j
     ctx = tasklets.get_context()
     ctx.set_cache_policy(False)
+
     class EmptyModel(model.Model):
       pass
+
     fut = EmptyModel.allocate_ids_async(1)
     self.assertFalse(fut._immediate_callbacks,
                      'Allocate ids hook queued default no-op.')
 
   def testPutHooksCalled(self):
-    test = self # Closure for inside hooks
+    test = self  # Closure for inside hooks
     self.pre_counter = 0
     self.post_counter = 0
 
     class HatStand(model.Model):
+
       def _pre_put_hook(self):
         test.pre_counter += 1
+
       def _post_put_hook(self, future):
         test.post_counter += 1
         test.assertEqual(future.get_result(), test.entity.key)
@@ -4353,16 +4496,18 @@ property <
   def testGetByIdHooksCalled(self):
     # See issue 95.  http://goo.gl/QSRQH
     # Adapted from testGetHooksCalled in key_test.py.
-    test = self # Closure for inside hook
+    test = self  # Closure for inside hook
     self.pre_counter = 0
     self.post_counter = 0
 
     class HatStand(model.Model):
+
       @classmethod
       def _pre_get_hook(cls, key):
         test.pre_counter += 1
         if test.pre_counter == 1:  # Cannot test for key in get_multi
           self.assertEqual(key, self.key)
+
       @classmethod
       def _post_get_hook(cls, key, future):
         test.post_counter += 1
@@ -4397,17 +4542,21 @@ property <
 
   def testGetOrInsertHooksCalled(self):
     # See issue 98.  http://goo.gl/7ak2i
-    test = self # Closure for inside hooks
+    test = self  # Closure for inside hooks
 
     class HatStand(model.Model):
+
       @classmethod
       def _pre_get_hook(cls, key):
         test.pre_get_counter += 1
+
       @classmethod
       def _post_get_hook(cls, key, future):
         test.post_get_counter += 1
+
       def _pre_put_hook(self):
         test.pre_put_counter += 1
+
       def _post_put_hook(self, future):
         test.post_put_counter += 1
 
@@ -4436,7 +4585,7 @@ property <
     self.assertEqual(self.post_put_counter, 0)
 
   def testMonkeyPatchHooks(self):
-    test = self # Closure for inside put hooks
+    test = self  # Closure for inside put hooks
     hook_attr_names = ('_pre_allocate_ids_hook', '_post_allocate_ids_hook',
                        '_pre_put_hook', '_post_put_hook')
     original_hooks = {}
@@ -4452,15 +4601,19 @@ property <
 
     # TODO: Should the unused arguments to Monkey Patched tests be tested?
     class HatStand(model.Model):
+
       @classmethod
       def _pre_allocate_ids_hook(cls, unused_size, unused_max, unused_parent):
         self.pre_allocate_ids_flag = True
+
       @classmethod
       def _post_allocate_ids_hook(cls, unused_size, unused_max, unused_parent,
                                   unused_future):
         self.post_allocate_ids_flag = True
+
       def _pre_put_hook(self):
         test.pre_put_flag = True
+
       def _post_put_hook(self, unused_future):
         test.post_put_flag = True
 
@@ -4488,11 +4641,14 @@ property <
 
   def testPreHooksCannotCancelRPC(self):
     class HatStand(model.Model):
+
       @classmethod
       def _pre_allocate_ids_hook(cls, unused_size, unused_max, unused_parent):
         raise tasklets.Return()
+
       def _pre_put_hook(self):
         raise tasklets.Return()
+
     self.assertRaises(tasklets.Return, HatStand.allocate_ids)
     entity = HatStand()
     self.assertRaises(tasklets.Return, entity.put)
@@ -4501,8 +4657,10 @@ property <
     # See issue 58.  http://goo.gl/hPN6j
     ctx = tasklets.get_context()
     ctx.set_cache_policy(False)
+
     class EmptyModel(model.Model):
       pass
+
     entity = EmptyModel()
     fut = entity.put_async()
     self.assertFalse(fut._immediate_callbacks, 'Put hook queued default no-op.')
@@ -4584,21 +4742,22 @@ class IndexTests(test_utils.NDBTest):
 
     self.create_index()
 
-    self.assertEqual(
-      [model.IndexState(
+    expected_value = [
+      model.IndexState(
         definition=model.Index(kind='Kind',
                                properties=[
                                  model.IndexProperty(name='property1',
                                                      direction='desc'),
                                  model.IndexProperty(name='property2',
                                                      direction='asc'),
-                                 ],
+                               ],
                                ancestor=False),
         state='building',
         id=1,
-        ),
-       ],
-      model.get_indexes())
+      ),
+    ]
+    self.assertEqual(expected_value,
+                     model.get_indexes())
 
   def testGetIndexesAsync(self):
     fut = model.get_indexes_async()
@@ -4607,21 +4766,22 @@ class IndexTests(test_utils.NDBTest):
 
     self.create_index()
 
-    self.assertEqual(
-      [model.IndexState(
+    expected_value = [
+      model.IndexState(
         definition=model.Index(kind='Kind',
                                properties=[
                                  model.IndexProperty(name='property1',
                                                      direction='desc'),
                                  model.IndexProperty(name='property2',
                                                      direction='asc'),
-                                 ],
+                               ],
                                ancestor=False),
         state='building',
         id=1,
-        ),
-       ],
-      model.get_indexes_async().get_result())
+      ),
+    ]
+    self.assertEqual(expected_value,
+                     model.get_indexes_async().get_result())
 
 
 class CacheTests(test_utils.NDBTest):
@@ -4661,14 +4821,17 @@ class CacheTests(test_utils.NDBTest):
     # See issue 57.  http://goo.gl/bXkib
     class Employee(model.Model):
       pass
+
     ctx = tasklets.get_context()
     ctx.set_cache_policy(True)
     ctx.set_memcache_policy(False)
     e = Employee()
     key = e.put()
     key.get()  # Warm the cache
+
     def trans():
       key.delete()
+
     model.transaction(trans)
     e = key.get()
     self.assertEqual(e, None)
@@ -4683,8 +4846,10 @@ class CacheTests(test_utils.NDBTest):
     e = Employee()
     key = e.put()
     key.get()  # Warm the cache
+
     def trans():
       key.delete()
+
     model.transaction(trans)
     e = key.get()
     self.assertEqual(e, None)
@@ -4736,7 +4901,7 @@ class CacheTests(test_utils.NDBTest):
     class Outer(model.Model):
       wrap = model.StructuredProperty(Inner, repeated=True)
 
-    d = datetime.date(1900,1,1)
+    d = datetime.date(1900, 1, 1)
     fd = FuzzyDate(d)
     orig = Outer(wrap=[Inner(date=fd), Inner(date=fd)])
     key = orig.put()
@@ -4771,14 +4936,17 @@ class CacheTests(test_utils.NDBTest):
     class Address(model.Model):
       street = model.StringProperty()
       city = model.StringProperty()
+
     class AddressList(model.Model):
       addresses = model.StructuredProperty(Address, repeated=True)
       backup = model.StructuredProperty(Address)
+
     class Person(model.Model):
       name = model.StringProperty()
       home = model.StructuredProperty(Address)
       alist = model.StructuredProperty(AddressList)
       blist = model.LocalStructuredProperty(AddressList)
+
     joe = Person(name='Joe',
                  home=Address(street='Main', city='Springfield'),
                  alist=AddressList(addresses=[Address(street='A', city='B'),
@@ -4795,8 +4963,10 @@ class CacheTests(test_utils.NDBTest):
   def testExpandoInModelFromDict(self):
     class E(model.Expando):
       pass
+
     class M(model.Model):
       m1 = model.StructuredProperty(E)
+
     e = E(e1='e1test')
     a = M(m1=e)
     new_a = M(**a.to_dict())
@@ -4805,6 +4975,7 @@ class CacheTests(test_utils.NDBTest):
   def testExpandoInExpandoFromDict(self):
     class A(model.Expando):
       pass
+
     e = model.Expando(b1='b1test')
     a = A(a1=e)
     new_a = A(**a.to_dict())
@@ -4813,6 +4984,7 @@ class CacheTests(test_utils.NDBTest):
   def testExpandoInExpandoWithoutStructureFromDict(self):
     class A(model.Expando):
       pass
+
     e = model.Expando(b1='b1test')
     a = A(a1=e)
     a_new = A(c1='c1test')
@@ -4823,6 +4995,7 @@ class CacheTests(test_utils.NDBTest):
   def testExpandoInExpandoWithStructureFromDict(self):
     class A(model.Expando):
       pass
+
     e = model.Expando(b1='b1test')
     a = A(a1=e)
     a_new = A(a1=model.Expando())
@@ -4832,8 +5005,10 @@ class CacheTests(test_utils.NDBTest):
   def testExpandoInExpandoWithListsFromDict(self):
     class B(model.Expando):
       pass
+
     class A(model.Expando):
       pass
+
     bs = [B(b1=[0, 1, 2, 3]), B(b2='b2test')]
     a = A(a1=bs)
     new_a = A(**a.to_dict())
@@ -4844,12 +5019,15 @@ class CacheTests(test_utils.NDBTest):
     # https://groups.google.com/forum/?fromgroups#!topic/appengine-ndb-discuss/idxsAZNHsqI
     class Root(model.Model):
       pass
+
     class Foo(model.Model):
       name = model.StringProperty()
+
     root = Root()
     root.put()
     foo1 = Foo(name='foo1', parent=root.key)
     foo1.put()
+
     @model.transactional
     def txn1():
       foo2 = foo1.key.get()
@@ -4861,6 +5039,7 @@ class CacheTests(test_utils.NDBTest):
       assert foo1 == foo3 == foos[0]
       assert foo1 != foo2
       raise model.Rollback
+
     @model.transactional
     def txn2():
       foo2 = foo1.key.get()
@@ -4874,6 +5053,7 @@ class CacheTests(test_utils.NDBTest):
       raise model.Rollback
     txn1()
     txn2()
+
 
 if __name__ == '__main__':
   unittest.main()

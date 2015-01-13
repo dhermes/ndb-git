@@ -360,7 +360,7 @@ _MAX_STRING_LENGTH = datastore_types._MAX_STRING_LENGTH
 _DIR_MAP = {
   entity_pb.Index_Property.ASCENDING: 'asc',
   entity_pb.Index_Property.DESCENDING: 'desc',
-  }
+}
 
 # Map index states to human-readable strings.
 _STATE_MAP = {
@@ -368,7 +368,7 @@ _STATE_MAP = {
   entity_pb.CompositeIndex.DELETED: 'deleting',
   entity_pb.CompositeIndex.READ_WRITE: 'serving',
   entity_pb.CompositeIndex.WRITE_ONLY: 'building',
-  }
+}
 
 
 class _NotEqualMixin(object):
@@ -2006,6 +2006,7 @@ class BlobKeyProperty(Property):
 # The Epoch (a zero POSIX timestamp).
 _EPOCH = datetime.datetime.utcfromtimestamp(0)
 
+
 class DateTimeProperty(Property):
   """A Property whose value is a datetime object.
 
@@ -2456,6 +2457,7 @@ class StructuredProperty(_StructuredGetForDictMixin):
     if values is None:
       return 0
     return len(values)
+
 
 class LocalStructuredProperty(_StructuredGetForDictMixin, BlobProperty):
   """Substructure that is serialized to an opaque blob.

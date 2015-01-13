@@ -401,8 +401,9 @@ class NamespaceKindPropertyNameStat(KindPropertyNameStat):
   STORED_KIND_NAME = '__Stat_Ns_PropertyName_Kind__'
 
 
+# Indent changed; Google-style dictates indent 4 spaces below.
 class NamespaceKindPropertyNamePropertyTypeStat(
-    KindPropertyNamePropertyTypeStat):
+  KindPropertyNamePropertyTypeStat):
   """KindPropertyNamePropertyTypeStat equivalent for a specific namespace.
 
   These may be found in each specific namespace and represent stats for
@@ -448,4 +449,4 @@ _DATASTORE_STATS_CLASSES_BY_KIND = {
         NamespaceKindPropertyNamePropertyTypeStat,
     NamespaceKindCompositeIndexStat.STORED_KIND_NAME:
         NamespaceKindCompositeIndexStat,
-    }
+}

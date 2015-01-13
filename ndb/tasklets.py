@@ -127,7 +127,7 @@ class _State(utils.threading_local):
     pending = []
     for fut in self.all_pending:
       if verbose:
-        line = fut.dump() + ('\n' + '-'*40)
+        line = fut.dump() + ('\n' + '-' * 40)
       else:
         line = fut.dump_stack()
       pending.append(line)
@@ -472,6 +472,7 @@ class Future(object):
     else:
       val = future.get_result()  # This won't raise an exception.
       self._help_tasklet_along(ns, ds_conn, gen, val)
+
 
 def sleep(dt):
   """Public function to sleep some time.
@@ -1024,10 +1025,12 @@ def synctasklet(func):
   webapp.RequestHandler.get method).
   """
   taskletfunc = tasklet(func)  # wrap at declaration time.
+
   @utils.wrapping(func)
   def synctasklet_wrapper(*args, **kwds):
     __ndb_debug__ = utils.func_info(func)
     return taskletfunc(*args, **kwds).get_result()
+
   return synctasklet_wrapper
 
 
@@ -1038,6 +1041,7 @@ def toplevel(func):
   webapp.RequestHandler.get() or Django view functions.
   """
   synctaskletfunc = synctasklet(func)  # wrap at declaration time.
+
   @utils.wrapping(func)
   def add_context_wrapper(*args, **kwds):
     __ndb_debug__ = utils.func_info(func)
@@ -1051,6 +1055,7 @@ def toplevel(func):
       set_context(None)
       ctx.flush().check_success()
       eventloop.run()  # Ensure writes are flushed, etc.
+
   return add_context_wrapper
 
 

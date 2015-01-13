@@ -35,7 +35,7 @@ qry = Foo.query()
 
 
 def bench(n):
-  ks = qry.fetch(n,keys_only=True)
+  ks = qry.fetch(n, keys_only=True)
   assert len(ks) == n
 
 

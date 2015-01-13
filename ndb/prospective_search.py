@@ -70,7 +70,7 @@ _MODEL_TYPE_TO_PYTHON_TYPE = {
   model.BooleanProperty: bool,
   model.FloatProperty: float,
   model.TextProperty: str,
-  }
+}
 
 
 def _add_schema_entry(prop_class, name, schema):

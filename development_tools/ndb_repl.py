@@ -31,6 +31,7 @@ bs_stub = blobstore_stub.BlobstoreServiceStub(bs_storage)
 apiproxy_stub_map.apiproxy.RegisterStub('blobstore', bs_stub)
 os.environ['APPLICATION_ID'] = '_'
 
+
 class Employee(Model):
   name = StringProperty()
   age = IntegerProperty()
@@ -44,8 +45,10 @@ class Employee(Model):
   def ranked(cls, rank):
     return cls.query(cls.rank == rank).order(cls.age)
 
+
 class Manager(Employee):
   report = StructuredProperty(Employee, repeated=True)
+
 
 reports = []
 for (name, age, rank) in [('Joe', 21, 1), ('Jim', 30, 2), ('Jane', 23, 1)]:
@@ -60,8 +63,10 @@ f2.get_result()
 for f in f1:
   f.get_result()
 
+
 class BlobTest(Model):
   data = BlobProperty(indexed=True)
+
 
 b1 = BlobTest(data='a')
 b1.put()
@@ -76,8 +81,11 @@ E = Employee
 M = Manager
 B = BlobTest
 
+
 class Node(Expando):
   pass
+
+
 Node.left = StructuredProperty(Node)
 Node.right = StructuredProperty(Node, 'rite')
 Node._fix_up_properties()

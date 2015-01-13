@@ -43,6 +43,6 @@ multithread_test:
 	PYTHONPATH=. $(PYTHON) multithread_test.py $(FLAGS)
 
 repl:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i startup.py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i ndb_repl.py $(FLAGS)
 
 .PHONY: help bench keybench gettaskletrace stress race multithread_test repl

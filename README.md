@@ -1,7 +1,7 @@
 # Google App Engine NDB Library
 
 [![Travis Build Status](https://travis-ci.org/dhermes/ndb-git.svg?branch=master)](https://travis-ci.org/dhermes/ndb-git)
-[![Coverage](https://coveralls.io/repos/dhermes/ndb-git/badge.png?branch=master)](https://coveralls.io/r/dhermes/ndb-git?branch=master)
+[![Coverage Status](https://img.shields.io/coveralls/dhermes/ndb-git.svg)](https://coveralls.io/r/dhermes/ndb-git?branch=master)
 
 This is a `git` port of [`appengine-ndb-experiment`][2] (a Mercurial
 project). This was imported via

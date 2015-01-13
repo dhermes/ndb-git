@@ -18,6 +18,7 @@ help:
 	@echo '   make stress            Threadsafe Py27 Stress Test        '
 	@echo '   make race              Race condition tests for NDB       '
 	@echo '   make multithread_test  Multi-threading torture test       '
+	@echo '   make repl              Custom REPL with NDB loaded        '
 	@echo '                                                             '
 	@echo 'NOTE: This file is being wound down and will be fully        '
 	@echo '      replaced by tox.ini.                                   '
@@ -41,4 +42,7 @@ race:
 multithread_test:
 	PYTHONPATH=. $(PYTHON) multithread_test.py $(FLAGS)
 
-.PHONY: help bench keybench gettaskletrace stress race multithread_test
+repl:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i startup.py $(FLAGS)
+
+.PHONY: help bench keybench gettaskletrace stress race multithread_test repl

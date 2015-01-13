@@ -291,7 +291,7 @@ class KeyTests(test_utils.NDBTest):
     self.assertRaises(Exception, key.Key, 42, 42)
 
   def testDeleteHooksCalled(self):
-    test = self # Closure for inside hook
+    test = self  # Closure for inside hook
     self.pre_counter = 0
     self.post_counter = 0
 
@@ -344,7 +344,7 @@ class KeyTests(test_utils.NDBTest):
                      'Delete hook queued default no-op.')
 
   def testGetHooksCalled(self):
-    test = self # Closure for inside hook
+    test = self  # Closure for inside hook
     self.pre_counter = 0
     self.post_counter = 0
 

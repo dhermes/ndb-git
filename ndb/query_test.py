@@ -778,7 +778,7 @@ class QueryTests(test_utils.NDBTest):
       x = model.StructuredProperty(X)
     y = Y(x=None)
     y.put()
-    eq_rhs = None  # To avoid == None check; instead of "is None".
+    eq_rhs = None  # To avoid "== None" check; instead of "is None".
     q = Y.query(Y.x == eq_rhs)
     self.assertEqual(q.fetch(), [y])
 

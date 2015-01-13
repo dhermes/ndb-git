@@ -62,7 +62,8 @@ class PolyModelTests(test_utils.NDBTest):
     self.assertEqual(snkr.class_, ['Shoe', 'Sneaker'])
 
     self.assertEqual(Shoe.query().fetch(), [s, m, snkr])
-    self.assertEqual(Shoe.query(Sneaker.pump == False).fetch(), [snkr])
+    eq_rhs = False  # To avoid "== False" check; instead of "is False".
+    self.assertEqual(Shoe.query(Sneaker.pump == eq_rhs).fetch(), [snkr])
     self.assertEqual(Moccasin.query().fetch(), [m])
     self.assertEqual(Sneaker.query().fetch(), [snkr])
 
@@ -254,9 +255,16 @@ class PolyModelTests(test_utils.NDBTest):
 
   def testGql(self):
     # See issue 199.
-    class A(polymodel.PolyModel): pass
-    class B(A): pass
-    class C(A): pass
+    # https://code.google.com/p/appengine-ndb-experiment/issues/detail?id=199
+    class A(polymodel.PolyModel):
+      pass
+
+    class B(A):
+      pass
+
+    class C(A):
+      pass
+
     b = B()
     b.put()
     c = C()

@@ -360,7 +360,7 @@ _MAX_STRING_LENGTH = datastore_types._MAX_STRING_LENGTH
 _DIR_MAP = {
   entity_pb.Index_Property.ASCENDING: 'asc',
   entity_pb.Index_Property.DESCENDING: 'desc',
-  }
+}
 
 # Map index states to human-readable strings.
 _STATE_MAP = {
@@ -368,7 +368,7 @@ _STATE_MAP = {
   entity_pb.CompositeIndex.DELETED: 'deleting',
   entity_pb.CompositeIndex.READ_WRITE: 'serving',
   entity_pb.CompositeIndex.WRITE_ONLY: 'building',
-  }
+}
 
 
 class _NotEqualMixin(object):

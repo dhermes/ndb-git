@@ -335,7 +335,7 @@ class MsgPropTests(test_utils.NDBTest):
     self.assertRaises(TypeError, msgprop.MessageProperty, Outer,
                       indexed_fields=['inners.greets.text'])
     self.assertRaises(TypeError, msgprop.MessageProperty, Outer,
-                       repeated=True, indexed_fields=['inner.greets.text'])
+                      repeated=True, indexed_fields=['inner.greets.text'])
 
   def testEnumProperty(self):
     class Foo(model.Model):

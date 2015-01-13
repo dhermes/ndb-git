@@ -786,34 +786,35 @@ class ModelTests(test_utils.NDBTest):
       t=datetime.time(),
       u=TESTUSER,
       xy=AMSTERDAM,
-      )
+    )
     m2.put()
+    NULL_VAL = None  # To avoid "== None" check; instead of "is None".
     q = MyModel.query(
-      MyModel.b == None,
-      MyModel.bb == None,
-      MyModel.d == None,
-      MyModel.f == None,
-      MyModel.i == None,
-      MyModel.k == None,
-      MyModel.s == None,
-      MyModel.t == None,
-      MyModel.u == None,
-      MyModel.xy == None,
-      )
+      MyModel.b == NULL_VAL,
+      MyModel.bb == NULL_VAL,
+      MyModel.d == NULL_VAL,
+      MyModel.f == NULL_VAL,
+      MyModel.i == NULL_VAL,
+      MyModel.k == NULL_VAL,
+      MyModel.s == NULL_VAL,
+      MyModel.t == NULL_VAL,
+      MyModel.u == NULL_VAL,
+      MyModel.xy == NULL_VAL,
+    )
     r = q.fetch()
     self.assertEqual(r, [m1])
     qq = [
-      MyModel.query(MyModel.b != None),
-      MyModel.query(MyModel.bb != None),
-      MyModel.query(MyModel.d != None),
-      MyModel.query(MyModel.f != None),
-      MyModel.query(MyModel.i != None),
-      MyModel.query(MyModel.k != None),
-      MyModel.query(MyModel.s != None),
-      MyModel.query(MyModel.t != None),
-      MyModel.query(MyModel.u != None),
-      MyModel.query(MyModel.xy != None),
-      ]
+      MyModel.query(MyModel.b != NULL_VAL),
+      MyModel.query(MyModel.bb != NULL_VAL),
+      MyModel.query(MyModel.d != NULL_VAL),
+      MyModel.query(MyModel.f != NULL_VAL),
+      MyModel.query(MyModel.i != NULL_VAL),
+      MyModel.query(MyModel.k != NULL_VAL),
+      MyModel.query(MyModel.s != NULL_VAL),
+      MyModel.query(MyModel.t != NULL_VAL),
+      MyModel.query(MyModel.u != NULL_VAL),
+      MyModel.query(MyModel.xy != NULL_VAL),
+    ]
     for q in qq:
       r = q.fetch()
       self.assertEqual(r, [m2], str(q))
@@ -1559,7 +1560,7 @@ property <
     p3 = Person(first_name="Alice", last_name="B")
     p4 = Person(first_name="Peter", last_name="Q")
 
-    orig = CustomObject(p1=[p1,p2], p2=[p3,p4])
+    orig = CustomObject(p1=[p1, p2], p2=[p3, p4])
     copy = CustomObject._from_pb(orig._to_pb())
 
     self.assertEqual("Bob", copy.p1[0].first_name)
@@ -1593,7 +1594,6 @@ property <
     self.assertEqual(ent.numbers[0].person.last_name, 'Smith')
     self.assertEqual(ent.numbers[0].phone, '1-212-555-1212')
 
-
   def testRepeatedNestedStructuredPropertyWithEmptyModels(self):
     class F(model.Model):
       g = model.StringProperty()
@@ -1623,18 +1623,15 @@ property <
         return (len(self.a) == len(other.a)
                 and all(a == b for a, b in zip(self.a, other.a)))
 
-    orig = Foo(a=[A(),
-                  A(b=1,
-                    c="a",
-                    d=None),
-                  A(b=2,
-                    d=D(e="hi",
-                        f=F(g="hello"))),
-                  A(b=None,
-                    c="b",
-                    d=D(e="bye")),
-                  A(b=3)
-                 ])
+    d1 = D(e="hi", f=F(g="hello"))
+    a_values = [
+      A(),
+      A(b=1, c="a", d=None),
+      A(b=2, d=d1),
+      A(b=None, c="b", d=D(e="bye")),
+      A(b=3),
+    ]
+    orig = Foo(a=a_values)
     pb = orig._to_pb()
     copy = Foo._from_pb(pb)
     self.assertEqual(orig, copy)
@@ -1805,7 +1802,7 @@ property <
 
       def __eq__(self, other):
         return (len(self.a) == len(other.a)
-                and all(a == b for a,b in zip(self.a, other.a)))
+                and all(a == b for a, b in zip(self.a, other.a)))
 
     orig = Foo(a=[A(b=None,
                     c=1,
@@ -2166,7 +2163,7 @@ property <
     x = MyModel(a=MySubmodel(foo='foo', bar=42),
                 b=[MySubmodel(foo='f'), MySubmodel(bar=4)])
     self.assertEqual({'a': {'foo': 'foo', 'bar': 42},
-                      'b': [{'foo': 'f', 'bar': None,},
+                      'b': [{'foo': 'f', 'bar': None},
                             {'foo': None, 'bar': 4}],
                       'c': None,
                       'd': None,
@@ -2258,12 +2255,13 @@ property <
       text = model.TextProperty()
     small = Biggy(blob='xyz', text=u'abc')
     self.assertEqual(repr(small), "Biggy(blob='xyz', text=u'abc')")
-    large = Biggy(blob='x'*500, text='a'*500)
+    large = Biggy(blob='x' * 500, text='a' * 500)
     self.assertEqual(repr(large),
-                     "Biggy(blob='%s', text='%s')" % ('x'*500, 'a'*500))
-    huge = Biggy(blob='x'*1000, text='a'*1000)
-    self.assertEqual(repr(huge),
-                     "Biggy(blob='%s...', text='%s...')" % ('x'*499, 'a'*499))
+                     "Biggy(blob='%s', text='%s')" % ('x' * 500, 'a' * 500))
+    huge = Biggy(blob='x' * 1000, text='a' * 1000)
+    self.assertEqual(
+      repr(huge),
+      "Biggy(blob='%s...', text='%s...')" % ('x' * 499, 'a' * 499))
 
   def testModelRepr_CustomRepr(self):
     # Demonstrate how to override a property's repr.
@@ -2409,12 +2407,12 @@ property <
       istr = model.StringProperty()  # Defaults to indexed=True.
       ugen = model.GenericProperty(indexed=False)
       igen = model.GenericProperty(indexed=True)
-    largeblob = 'x'*500
-    toolargeblob = 'x'*501
-    hugeblob = 'x'*10000
-    largetext = u'\u1234'*500
-    toolargetext = u'\u1234'*500 + 'x'
-    hugetext = u'\u1234'*10000
+    largeblob = 'x' * 500
+    toolargeblob = 'x' * 501
+    hugeblob = 'x' * 10000
+    largetext = u'\u1234' * 500
+    toolargetext = u'\u1234' * 500 + 'x'
+    hugetext = u'\u1234' * 10000
     ent = MyModel()
     # These should all fail:
     self.assertRaises(datastore_errors.BadValueError,
@@ -3010,7 +3008,7 @@ property <
       comps = model.GenericProperty(compressed=True, repeated=True)
     self.assertFalse(Goo.comp._indexed)
     self.assertFalse(Goo.comps._indexed)
-    a = Goo(comp='fizzy', comps=['x'*1000, 'y'*1000])
+    a = Goo(comp='fizzy', comps=['x' * 1000, 'y' * 1000])
     a.put()
     self.assertTrue(isinstance(a._values['comp'].b_val,
                                model._CompressedValue))
@@ -3023,9 +3021,9 @@ property <
     self.assertTrue(a is not b)
     # Extra-double-check.
     self.assertEqual(b.comp, 'fizzy')
-    self.assertEqual(b.comps, ['x'*1000, 'y'*1000])
+    self.assertEqual(b.comps, ['x' * 1000, 'y' * 1000])
     # Now try some non-string values.
-    x = Goo(comp=42, comps=[u'\u1234'*1000, datetime.datetime(2012, 2, 23)])
+    x = Goo(comp=42, comps=[u'\u1234' * 1000, datetime.datetime(2012, 2, 23)])
     x.put()
     self.assertFalse(isinstance(x._values['comp'].b_val,
                                 model._CompressedValue))
@@ -3097,7 +3095,7 @@ property <
       start = model.IntegerProperty()
       end = model.IntegerProperty()
       cp = model.ComputedProperty(lambda self: range(self.start, self.end),
-                                   repeated=True)
+                                  repeated=True)
     e = StopWatch(start=1, end=10)
     self.assertEqual(e.cp, [1, 2, 3, 4, 5, 6, 7, 8, 9])
     k = e.put()
@@ -3132,7 +3130,7 @@ property <
     class Demo(model.Model):
       bytes = model.BlobProperty()
       text = model.TextProperty()
-    x = Demo(bytes='x'*1000, text=u'a'*1000)
+    x = Demo(bytes='x' * 1000, text=u'a' * 1000)
     key = x.put()
     y = key.get()
     self.assertEqual(x, y)
@@ -3831,8 +3829,8 @@ property <
     callback1(log)
     self.assertEqual(
       log,
-      [context.TransactionOptions(propagation=
-                                  context.TransactionOptions.ALLOWED)])
+      [context.TransactionOptions(
+        propagation=context.TransactionOptions.ALLOWED)])
 
     @model.transactional(retries=42)
     def callback2(log):
@@ -4320,7 +4318,7 @@ property <
                      'Allocate ids hook queued default no-op.')
 
   def testPutHooksCalled(self):
-    test = self # Closure for inside hooks
+    test = self  # Closure for inside hooks
     self.pre_counter = 0
     self.post_counter = 0
 
@@ -4356,7 +4354,7 @@ property <
   def testGetByIdHooksCalled(self):
     # See issue 95.  http://goo.gl/QSRQH
     # Adapted from testGetHooksCalled in key_test.py.
-    test = self # Closure for inside hook
+    test = self  # Closure for inside hook
     self.pre_counter = 0
     self.post_counter = 0
 
@@ -4400,7 +4398,7 @@ property <
 
   def testGetOrInsertHooksCalled(self):
     # See issue 98.  http://goo.gl/7ak2i
-    test = self # Closure for inside hooks
+    test = self  # Closure for inside hooks
 
     class HatStand(model.Model):
       @classmethod
@@ -4439,7 +4437,7 @@ property <
     self.assertEqual(self.post_put_counter, 0)
 
   def testMonkeyPatchHooks(self):
-    test = self # Closure for inside put hooks
+    test = self  # Closure for inside put hooks
     hook_attr_names = ('_pre_allocate_ids_hook', '_post_allocate_ids_hook',
                        '_pre_put_hook', '_post_put_hook')
     original_hooks = {}
@@ -4587,21 +4585,22 @@ class IndexTests(test_utils.NDBTest):
 
     self.create_index()
 
-    self.assertEqual(
-      [model.IndexState(
+    expected_value = [
+      model.IndexState(
         definition=model.Index(kind='Kind',
                                properties=[
                                  model.IndexProperty(name='property1',
                                                      direction='desc'),
                                  model.IndexProperty(name='property2',
                                                      direction='asc'),
-                                 ],
+                               ],
                                ancestor=False),
         state='building',
         id=1,
-        ),
-       ],
-      model.get_indexes())
+      ),
+    ]
+    self.assertEqual(expected_value,
+                     model.get_indexes())
 
   def testGetIndexesAsync(self):
     fut = model.get_indexes_async()
@@ -4610,21 +4609,22 @@ class IndexTests(test_utils.NDBTest):
 
     self.create_index()
 
-    self.assertEqual(
-      [model.IndexState(
+    expected_value = [
+      model.IndexState(
         definition=model.Index(kind='Kind',
                                properties=[
                                  model.IndexProperty(name='property1',
                                                      direction='desc'),
                                  model.IndexProperty(name='property2',
                                                      direction='asc'),
-                                 ],
+                               ],
                                ancestor=False),
         state='building',
         id=1,
-        ),
-       ],
-      model.get_indexes_async().get_result())
+      ),
+    ]
+    self.assertEqual(expected_value,
+                     model.get_indexes_async().get_result())
 
 
 class CacheTests(test_utils.NDBTest):
@@ -4739,7 +4739,7 @@ class CacheTests(test_utils.NDBTest):
     class Outer(model.Model):
       wrap = model.StructuredProperty(Inner, repeated=True)
 
-    d = datetime.date(1900,1,1)
+    d = datetime.date(1900, 1, 1)
     fd = FuzzyDate(d)
     orig = Outer(wrap=[Inner(date=fd), Inner(date=fd)])
     key = orig.put()

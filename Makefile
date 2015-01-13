@@ -22,39 +22,43 @@ help:
 	@echo '   make race                 Race condition tests for NDB       '
 	@echo '   make multithread_test     Multi-threading torture test       '
 	@echo '   make repl                 Custom REPL with NDB loaded        '
+	@echo '   make gql                  Custom REPL for executing GQL      '
 	@echo '                                                                '
 	@echo 'NOTE: This file is being wound down and will be fully           '
 	@echo '      replaced by tox.ini.                                      '
 
 
 bench:
-	PYTHONPATH=. $(PYTHON) bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/bench.py $(FLAGS)
 
 key_bench:
-	PYTHONPATH=. $(PYTHON) key_bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/key_bench.py $(FLAGS)
 
 put_bench:
-	PYTHONPATH=. $(PYTHON) put_bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/put_bench.py $(FLAGS)
 
 db_keys_only_bench:
-	PYTHONPATH=. $(PYTHON) db_keys_only_bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/db_keys_only_bench.py $(FLAGS)
 
 ndb_keys_only_bench:
-	PYTHONPATH=. $(PYTHON) ndb_keys_only_bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/ndb_keys_only_bench.py $(FLAGS)
 
 get_tasklet_race:
-	PYTHONPATH=. $(PYTHON) get_tasklet_race.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/get_tasklet_race.py $(FLAGS)
 
 stress:
-	PYTHONPATH=. $(PYTHON) stress.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/stress.py $(FLAGS)
 
 race:
-	PYTHONPATH=. $(PYTHON) race.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/race.py $(FLAGS)
 
 multithread_test:
-	PYTHONPATH=. $(PYTHON) multithread_test.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/multithread_test.py $(FLAGS)
 
 repl:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i ndb_repl.py $(FLAGS)
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i development_tools/ndb_repl.py $(FLAGS)
 
-.PHONY: help bench key_bench put_bench db_keys_only_bench ndb_keys_only_bench get_tasklet_race stress race multithread_test repl
+gql:
+	PYTHONPATH=$(GAEPATH):. $(PYTHON) development_tools/gql_repl.py $(FLAGS)
+
+.PHONY: help bench key_bench put_bench db_keys_only_bench ndb_keys_only_bench get_tasklet_race stress race multithread_test repl gql

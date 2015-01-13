@@ -50,7 +50,7 @@ def repl():
       continue
 
     for i, result in enumerate(results):
-      print '%2d.' % (i+1), result
+      print '%2d.' % (i + 1), result
 
 def main():
   try:

@@ -85,7 +85,7 @@ class CustomProperty(StructuredProperty):
   MISSING = object()  # Singleton to indicate "no value at all"
 
   def __init__(self,
-               construct, # lambda model_object: user_object
+               construct,  # lambda model_object: user_object
                attributes,  # [attrname, ...] or {attrname: propname, ...}
                name=None,
                repeated=False,
@@ -180,7 +180,7 @@ class FlexidateProperty(CustomProperty):
       name=name,
       repeated=repeated,
       indexed=indexed,
-      )
+    )
 
   def __repr__(self):
     return ('FlexidateProperty(%r, %r, %r)' %

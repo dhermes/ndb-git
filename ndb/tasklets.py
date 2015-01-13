@@ -127,7 +127,7 @@ class _State(utils.threading_local):
     pending = []
     for fut in self.all_pending:
       if verbose:
-        line = fut.dump() + ('\n' + '-'*40)
+        line = fut.dump() + ('\n' + '-' * 40)
       else:
         line = fut.dump_stack()
       pending.append(line)

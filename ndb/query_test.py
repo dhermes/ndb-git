@@ -277,12 +277,19 @@ class QueryTests(test_utils.NDBTest):
                       lambda: Emp.sub.booh == 42)
     self.assertRaises(datastore_errors.BadFilterError,
                       lambda: Emp.struct == Foo(name='a'))
-    # TODO: Make this fail?  See issue 89.  http://goo.gl/K4gbY
-    # Currently StructuredProperty(..., indexed=False) has no effect.
-    ## self.assertRaises(datastore_errors.BadFilterError,
-    ##                   lambda: Emp.struct.name == 'a')
     self.assertRaises(datastore_errors.BadFilterError,
                       lambda: Emp.local == Foo(name='a'))
+    return Emp
+
+  @unittest.skip('BadFilterError is not raised.')
+  def testQueryUnindexedBadFilterFails(self):
+    Emp = self.testQueryUnindexedFails()
+    # TODO: Make this fail?  See issue 89.  http://goo.gl/K4gbY
+    # Currently StructuredProperty(..., indexed=False) has no effect.
+    self.assertRaises(datastore_errors.BadFilterError,
+                      lambda: Emp.struct.name == 'a')
+    # Once fixed, this case should be removed and the assert moved
+    # back into `testQueryUnindexedFails`.
 
   def testConstructor(self):
     self.ExpectWarnings()
@@ -771,7 +778,8 @@ class QueryTests(test_utils.NDBTest):
       x = model.StructuredProperty(X)
     y = Y(x=None)
     y.put()
-    q = Y.query(Y.x == None)
+    eq_rhs = None  # To avoid == None check; instead of "is None".
+    q = Y.query(Y.x == eq_rhs)
     self.assertEqual(q.fetch(), [y])
 
   def testQueryAncestorConsistentWithAppId(self):
@@ -1036,8 +1044,8 @@ class QueryTests(test_utils.NDBTest):
     q = Foo.query(Foo.name >= 'joe', Foo.tags == 'joe')
     qi = q.iter()
     qi.next()
-    properties=[model.IndexProperty(name='tags', direction='asc'),
-                model.IndexProperty(name='name', direction='asc')]
+    properties = [model.IndexProperty(name='tags', direction='asc'),
+                  model.IndexProperty(name='name', direction='asc')]
     self.assertEqual(qi.index_list(),
                      [model.IndexState(
                        definition=model.Index(kind='Foo',
@@ -1052,8 +1060,8 @@ class QueryTests(test_utils.NDBTest):
     q = Foo.query(Foo.name >= 'joe', Foo.tags == 'joe')
     qi = q.iter()
     list(qi)
-    properties=[model.IndexProperty(name='tags', direction='asc'),
-                model.IndexProperty(name='name', direction='asc')]
+    properties = [model.IndexProperty(name='tags', direction='asc'),
+                  model.IndexProperty(name='name', direction='asc')]
     self.assertEqual(qi.index_list(),
                      [model.IndexState(
                        definition=model.Index(kind='Foo',
@@ -1072,8 +1080,8 @@ class QueryTests(test_utils.NDBTest):
     qi.next()
     # TODO: This is a little odd, because that's not exactly the index
     # we created...?
-    properties=[model.IndexProperty(name='tags', direction='asc'),
-                model.IndexProperty(name='name', direction='desc')]
+    properties = [model.IndexProperty(name='tags', direction='asc'),
+                  model.IndexProperty(name='name', direction='desc')]
     self.assertEqual(qi.index_list(),
                      [model.IndexState(
                        definition=model.Index(kind='Foo',
@@ -1377,7 +1385,7 @@ class QueryTests(test_utils.NDBTest):
       a = model.StringProperty()
     class ChildModel(model.Model):
       b = model.StringProperty()
-    p = ParentModel(a= "Test1")
+    p = ParentModel(a="Test1")
     p.put()
     c = ChildModel(parent=p.key, b="Test2")
     c.put()
@@ -1563,10 +1571,10 @@ class QueryTests(test_utils.NDBTest):
     self.checkGql([self.jill], "SELECT * FROM Foo LIMIT 1 OFFSET 1",
                   fetch=lambda q: q.fetch())
 
-# XXX TODO: Make this work:
-##   def testGqlLimitQueryUsingFetch(self):
-##     self.checkGql([self.joe, self.jill], "SELECT * FROM Foo LIMIT 2",
-##                   fetch=lambda q: q.fetch(3))
+  @unittest.skip('GQL Fetch currently fails.')
+  def testGqlLimitQueryUsingFetch(self):
+    self.checkGql([self.joe, self.jill], "SELECT * FROM Foo LIMIT 2",
+                  fetch=lambda q: q.fetch(3))
 
   def testGqlOffsetQueryUsingFetchPage(self):
     q = query.gql("SELECT * FROM Foo LIMIT 2")
@@ -1575,12 +1583,21 @@ class QueryTests(test_utils.NDBTest):
     self.assertEqual(True, more1)
     res2, cur2, more2 = q.fetch_page(1, start_cursor=cur1)
     self.assertEqual([self.jill], res2)
-    # XXX TODO: Gotta make this work:
-##     self.assertEqual(False, more2)
-##     res3, cur3, more3 = q.fetch_page(1, start_cursor=cur2)
-##     self.assertEqual([], res3)
-##     self.assertEqual(False, more3)
-##     self.assertEqual(None, cur3)
+
+  @unittest.skip('More results should be False')
+  def testGqlOffsetQuerySubsequent(self):
+    q = query.gql("SELECT * FROM Foo LIMIT 2")
+    res1, cur1, more1 = q.fetch_page(1)
+    self.assertEqual([self.joe], res1)
+    self.assertEqual(True, more1)
+    res2, cur2, more2 = q.fetch_page(1, start_cursor=cur1)
+    self.assertEqual([self.jill], res2)
+
+    self.assertEqual(False, more2)
+    res3, cur3, more3 = q.fetch_page(1, start_cursor=cur2)
+    self.assertEqual([], res3)
+    self.assertEqual(False, more3)
+    self.assertEqual(None, cur3)
 
   def testGqlLimitQueryUsingFetchPage(self):
     q = query.gql("SELECT * FROM Foo OFFSET 1")
@@ -1682,7 +1699,7 @@ class QueryTests(test_utils.NDBTest):
       adatetime=datetime.datetime(2012, 2, 1, 14, 54, 0),
       adate=datetime.date(2012, 2, 2),
       atime=datetime.time(14, 54, 0),
-      )
+    )
     abar.put()
     bbar = Bar()
     bbar.put()

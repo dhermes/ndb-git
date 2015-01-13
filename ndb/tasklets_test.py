@@ -50,7 +50,7 @@ class TaskletTests(test_utils.NDBTest):
       self.assertTrue(ZeroDivisionError in tasklets._flow_exceptions)
       @tasklets.tasklet
       def foo():
-        1/0
+        1 / 0
         yield
       self.assertRaises(ZeroDivisionError, foo().get_result)
     finally:

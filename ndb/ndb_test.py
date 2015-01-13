@@ -15,8 +15,8 @@ except ImportError:
 
 def load_tests(loader, standard_tests, pattern):
   mods = ['context', 'eventloop', 'key', 'metadata',
-          'msgprop', 'model', 'polymodel',
-          'prospective_search', 'query', 'stats', 'tasklets', 'blobstore']
+          'model', 'msgprop', 'polymodel', 'prospective_search',
+          'query', 'rpc', 'stats', 'tasklets', 'blobstore']
   test_mods = ['%s_test' % name for name in mods]
   ndb = __import__(location, fromlist=test_mods, level=1)
 

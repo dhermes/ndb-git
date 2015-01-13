@@ -4,6 +4,32 @@ All other NDB code should import its Google App Engine modules from
 this module.  If necessary, add new imports here (in both places).
 """
 
+import os
+import sys
+try:
+  import google
+  GOOGLE_PACKAGE_PATH = set(google.__path__)
+except ImportError:
+  GOOGLE_PACKAGE_PATH = None
+
+
+def set_appengine_imports():
+  gae_path = os.getenv('GAE')
+  if gae_path is None:
+    return
+
+  sys.path.insert(0, gae_path)
+  sys.modules.pop('google', None)
+  import dev_appserver
+  dev_appserver.fix_sys_path()
+
+  if GOOGLE_PACKAGE_PATH is not None:
+    import google
+    GOOGLE_PACKAGE_PATH.update(google.__path__)
+    google.__path__ = list(GOOGLE_PACKAGE_PATH)
+
+
+set_appengine_imports()
 try:
   from google.appengine.datastore import entity_pb
   normal_environment = True

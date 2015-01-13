@@ -105,25 +105,6 @@ The main directory contains some scripts and auxiliary files.
 How To
 ------
 
-You need to separately download and install the latest version of the
-App Engine Python SDK.  NOTE: older versions don't work!!!!!!!!!
-(If you don't know where to find that you are not ready to play with
-this code. :-) Assuming the SDK lives at `/usr/local/google_appengine`,
-you need to add that directory to your `$PYTHONPATH` environment
-variable.  You should then be able to run something like this:
-
-```python
->>> import ndb
-```
-
-If this works your setup is correct.
-
-To run the tests, use
-
-```
-make
-```
-
 To run the tests with coverage, install the `coverage.py` [package][1]
 and then use
 

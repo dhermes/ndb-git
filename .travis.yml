@@ -1,0 +1,12 @@
+language: python
+sudo: false
+cache:
+  directories:
+  - cache/
+
+before_install:
+  - ./get_app_engine_sdk.sh
+  - export GAE="./cache/google_appengine"
+
+script:
+  - make runtests

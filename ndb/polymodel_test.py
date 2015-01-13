@@ -29,8 +29,10 @@ class PolyModelTests(test_utils.NDBTest):
     # Test basic PolyModel functionality.
     class Shoe(PolyModel):
       color = model.StringProperty()
+
     class Moccasin(Shoe):
       leather = model.StringProperty()
+
     class Sneaker(Shoe):
       pump = model.BooleanProperty()
 
@@ -70,6 +72,7 @@ class PolyModelTests(test_utils.NDBTest):
   def testBlobKeyProperty(self):
     class MyModel(PolyModel):
       pass
+
     class MyDerivedModel(MyModel):
       image = model.BlobKeyProperty()
 
@@ -89,8 +92,10 @@ class PolyModelTests(test_utils.NDBTest):
     # Tests for the class_ property.
     class Animal(PolyModel):
       pass
+
     class Dog(Animal):
       pass
+
     fido = Dog()
     self.assertEqual(fido.class_, ['Animal', 'Dog'])
     self.assertRaises(TypeError, setattr, fido, 'class_', ['Animal', 'Dog'])
@@ -100,8 +105,10 @@ class PolyModelTests(test_utils.NDBTest):
     # (See also testExpandoPoly, and the Ghoul class in testInheritance.)
     class Animal(PolyModel, model.Expando):
       pass
+
     class Mammal(Animal):
       pass
+
     cat = Mammal(name='Tom', naps=18, sound='purr')
     cat1 = cat.put().get()
     self.assertFalse(cat1 is cat)
@@ -115,8 +122,10 @@ class PolyModelTests(test_utils.NDBTest):
     # It should work either way.
     class Animal(model.Expando, PolyModel):
       pass
+
     class Mammal(Animal):
       pass
+
     cat = Mammal(name='Tom', naps=18, sound='purr')
     cat1 = cat.put().get()
     self.assertFalse(cat1 is cat)
@@ -129,22 +138,31 @@ class PolyModelTests(test_utils.NDBTest):
     # Tests focused on the inheritance model, including diamond inheritance.
     class NamedThing(model.Model):
       name = model.StringProperty()
+
     class Animal(PolyModel, NamedThing):
       legs = model.IntegerProperty(default=4)
+
     class Canine(Animal):
       pass
+
     class Dog(Canine):
       breed = model.StringProperty(default='mutt')
+
     class Wolf(Canine):
       mythical = model.BooleanProperty(default=False)
+
     class Feline(Animal):
       sound = model.StringProperty()
+
     class Cat(Feline):
       naps = model.IntegerProperty()
+
     class Panther(Feline):
       pass
+
     class Monster(Dog, Cat):
       ancestry = model.StringProperty()
+
     class Ghoul(Monster, model.Expando):
       pass
 
@@ -205,10 +223,13 @@ class PolyModelTests(test_utils.NDBTest):
   def testPickling(self):
     # Test that PolyModel instances are pickled and unpickled properly.
     global Animal, Dog
+
     class Animal(PolyModel):
       name = model.StringProperty()
+
     class Dog(Animal):
       breed = model.StringProperty()
+
     for proto in 0, 1, 2:
       fido = Dog(name='Fido', breed='chihuahua')
       s = pickle.dumps(fido, proto)
@@ -222,12 +243,16 @@ class PolyModelTests(test_utils.NDBTest):
     # Test that overriding _class_name() works.
     class Animal(PolyModel):
       pass
+
     class Feline(Animal):
       pass
+
     class Cat(Feline):
+
       @classmethod
       def _class_name(cls):
         return 'Pussycat'
+
     tom = Cat()
     self.assertEqual(tom.class_, ['Animal', 'Feline', 'Pussycat'])
     tom.put()
@@ -240,14 +265,19 @@ class PolyModelTests(test_utils.NDBTest):
   def testMixins(self):
     class Mixin(object):
       pass
+
     class Entity(polymodel.PolyModel):
       pass
+
     class ChildEntity(Entity):
       pass
+
     class RightMixinEntity(Entity, Mixin):
       pass
+
     class LeftMixinEntity(Mixin, Entity):
       pass
+
     self.assertEqual(Entity._get_kind(), 'Entity')
     self.assertEqual(ChildEntity._get_kind(), 'Entity')
     self.assertEqual(RightMixinEntity._get_kind(), 'Entity')
@@ -277,8 +307,10 @@ class PolyModelTests(test_utils.NDBTest):
     # Test that query on root class should not filter.
     class Animal(PolyModel):
       pass
+
     class Cat(Animal):
       pass
+
     self.assertEqual(Animal.query().filters, None)
     self.assertNotEqual(Cat.query().filters, None)
 
@@ -344,10 +376,13 @@ class CompatibilityTests(test_utils.NDBTest):
   def testCompatibility(self):
     class Animal(PolyModel):
       name = model.StringProperty()
+
     class Feline(Animal):
       whiskers = model.BooleanProperty()
+
     class Cat(Feline):
       purr = model.StringProperty()
+
     tom = Cat(name='Tom', purr='loud', whiskers=True)
     tom._prepare_for_put()
     self.assertEqual(str(tom._to_pb()), TOM_PB)

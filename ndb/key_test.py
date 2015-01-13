@@ -277,10 +277,13 @@ class KeyTests(test_utils.NDBTest):
   def testKindFromModel(self):
     class M(model.Model):
       pass
+
     class N(model.Model):
+
       @classmethod
       def _get_kind(cls):
         return 'NN'
+
     k = key.Key(M, 1)
     self.assertEqual(k, key.Key('M', 1))
     k = key.Key('X', 1, N, 2, 'Y', 3)
@@ -296,11 +299,13 @@ class KeyTests(test_utils.NDBTest):
     self.post_counter = 0
 
     class HatStand(model.Model):
+
       @classmethod
       def _pre_delete_hook(cls, key):
         test.pre_counter += 1
         if test.pre_counter == 1:  # Cannot test for key in delete_multi
           self.assertEqual(self.key, key)
+
       @classmethod
       def _post_delete_hook(cls, key, future):
         test.post_counter += 1
@@ -335,8 +340,10 @@ class KeyTests(test_utils.NDBTest):
     # See issue 58.  http://goo.gl/hPN6j
     ctx = tasklets.get_context()
     ctx.set_cache_policy(False)
+
     class EmptyModel(model.Model):
       pass
+
     entity = EmptyModel()
     entity.put()
     fut = entity.key.delete_async()
@@ -349,11 +356,13 @@ class KeyTests(test_utils.NDBTest):
     self.post_counter = 0
 
     class HatStand(model.Model):
+
       @classmethod
       def _pre_get_hook(cls, key):
         test.pre_counter += 1
         if test.pre_counter == 1:  # Cannot test for key in get_multi
           self.assertEqual(key, self.key)
+
       @classmethod
       def _post_get_hook(cls, key, future):
         test.post_counter += 1
@@ -402,15 +411,19 @@ class KeyTests(test_utils.NDBTest):
 
     # TODO: Should the unused arguments to Monkey Patched tests be tested?
     class HatStand(model.Model):
+
       @classmethod
       def _pre_get_hook(cls, unused_key):
         self.pre_get_flag = True
+
       @classmethod
       def _post_get_hook(cls, unused_key, unused_future):
         self.post_get_flag = True
+
       @classmethod
       def _pre_delete_hook(cls, unused_key):
         self.pre_delete_flag = True
+
       @classmethod
       def _post_delete_hook(cls, unused_key, unused_future):
         self.post_delete_flag = True
@@ -439,12 +452,15 @@ class KeyTests(test_utils.NDBTest):
 
   def testPreHooksCannotCancelRPC(self):
     class Foo(model.Model):
+
       @classmethod
       def _pre_get_hook(cls, unused_key):
         raise tasklets.Return()
+
       @classmethod
       def _pre_delete_hook(cls, unused_key):
         raise tasklets.Return()
+
     entity = Foo()
     entity.put()
     self.assertRaises(tasklets.Return, entity.key.get)
@@ -454,8 +470,10 @@ class KeyTests(test_utils.NDBTest):
     # See issue 58.  http://goo.gl/hPN6j
     ctx = tasklets.get_context()
     ctx.set_cache_policy(False)
+
     class EmptyModel(model.Model):
       pass
+
     entity = EmptyModel()
     entity.put()
     fut = entity.key.get_async()

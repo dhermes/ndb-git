@@ -80,8 +80,10 @@ def main():
   print '-' * 20
 
   req = GetNotesRequest(on_or_before=42)
+
   class M(ndb.Model):
     req = MessageProperty(GetNotesRequest)
+
   m = M(req=req)
   print m
   print m.put().get()

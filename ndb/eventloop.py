@@ -135,11 +135,13 @@ class EventLoop(object):
       if len(rpcs) > 1:
         # Don't call the callback until all sub-rpcs have completed.
         rpc.__done = False
+
         def help_multi_rpc_along(r=rpc, c=callback, a=args, k=kwds):
           if r.state == _FINISHING and not r.__done:
             r.__done = True
             c(*a, **k)
             # TODO: And again, what about exceptions?
+
         callback = help_multi_rpc_along
         args = ()
         kwds = {}

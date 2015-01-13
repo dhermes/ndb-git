@@ -1025,10 +1025,12 @@ def synctasklet(func):
   webapp.RequestHandler.get method).
   """
   taskletfunc = tasklet(func)  # wrap at declaration time.
+
   @utils.wrapping(func)
   def synctasklet_wrapper(*args, **kwds):
     __ndb_debug__ = utils.func_info(func)
     return taskletfunc(*args, **kwds).get_result()
+
   return synctasklet_wrapper
 
 
@@ -1039,6 +1041,7 @@ def toplevel(func):
   webapp.RequestHandler.get() or Django view functions.
   """
   synctaskletfunc = synctasklet(func)  # wrap at declaration time.
+
   @utils.wrapping(func)
   def add_context_wrapper(*args, **kwds):
     __ndb_debug__ = utils.func_info(func)
@@ -1052,6 +1055,7 @@ def toplevel(func):
       set_context(None)
       ctx.flush().check_success()
       eventloop.run()  # Ensure writes are flushed, etc.
+
   return add_context_wrapper
 
 

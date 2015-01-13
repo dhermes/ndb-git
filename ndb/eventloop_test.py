@@ -60,6 +60,7 @@ class EventLoopTests(test_utils.NDBTest):
 
   def testFifoOrderForEventsWithDelayNone(self):
     order = []
+
     def foo(arg):
       order.append(arg)
 
@@ -81,8 +82,10 @@ class EventLoopTests(test_utils.NDBTest):
 
   def testRun(self):
     record = []
+
     def foo(arg):
       record.append(arg)
+
     eventloop.queue_call(0.2, foo, 42)
     eventloop.queue_call(0.1, foo, arg='hello')
     eventloop.run()
@@ -90,8 +93,10 @@ class EventLoopTests(test_utils.NDBTest):
 
   def testRunWithRpcs(self):
     record = []
+
     def foo(arg):
       record.append(arg)
+
     eventloop.queue_call(0.1, foo, 42)
     config = datastore_rpc.Configuration(on_completion=foo)
     rpc = self.conn.async_get(config, [])
@@ -105,18 +110,22 @@ class EventLoopTests(test_utils.NDBTest):
 
   def testIdle(self):
     counters = [0, 0, 0]
+
     def idler1():
       logging.info('idler1 running')
       counters[0] += 1
       return False
+
     def idler2(a, b=None):
       logging.info('idler2 running: a=%s, b=%s', a, b)
       counters[1] += 1
       return False
+
     def idler3(k=None):
       logging.info('idler3 running: k=%s', k)
       counters[2] += 1
       return None
+
     self.ev.add_idle(idler1)
     self.ev.add_idle(idler2, 10, 20)
     eventloop.add_idle(idler3, k=42)
@@ -135,8 +144,10 @@ class EventLoopTests(test_utils.NDBTest):
     r1.wait()
     r2.wait()
     calls = []
+
     def callback():
       calls.append(1)
+
     eventloop.queue_rpc(rpc, callback)
     eventloop.run()
     self.assertEqual(calls, [1])

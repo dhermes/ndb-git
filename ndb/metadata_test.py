@@ -15,16 +15,22 @@ class MetadataTests(test_utils.NDBTest):
 
   def setUp(self):
     super(MetadataTests, self).setUp()
+
     class Foo(model.Model):
       name = model.StringProperty()
       age = model.IntegerProperty()
+
     self.Foo = Foo
+
     class Bar(model.Model):
       name = model.StringProperty()
       rate = model.IntegerProperty()
+
     self.Bar = Bar
+
     class Ext(model.Expando):
       pass
+
     self.Ext = Ext
     namespace_manager.set_namespace('')  # Always start in default ns.
     # Turn on caching to make sure we don't cache metadata

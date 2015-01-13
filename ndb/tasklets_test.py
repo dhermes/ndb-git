@@ -26,6 +26,7 @@ def toplevel_put_async(m):
   m.put_async()
   raise tasklets.Return(True)
 
+
 class TaskletTests(test_utils.NDBTest):
 
   def setUp(self):

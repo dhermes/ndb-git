@@ -2006,6 +2006,7 @@ class BlobKeyProperty(Property):
 # The Epoch (a zero POSIX timestamp).
 _EPOCH = datetime.datetime.utcfromtimestamp(0)
 
+
 class DateTimeProperty(Property):
   """A Property whose value is a datetime object.
 
@@ -2456,6 +2457,7 @@ class StructuredProperty(_StructuredGetForDictMixin):
     if values is None:
       return 0
     return len(values)
+
 
 class LocalStructuredProperty(_StructuredGetForDictMixin, BlobProperty):
   """Substructure that is serialized to an opaque blob.

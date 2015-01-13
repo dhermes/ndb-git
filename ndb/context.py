@@ -76,6 +76,7 @@ class ContextOptions(datastore_rpc.Configuration):
         'memcache_deadline should be an integer (%r)' % (value,))
     return value
 
+
 class TransactionOptions(ContextOptions, datastore_rpc.TransactionOptions):
   """Support both context options and transaction options."""
 

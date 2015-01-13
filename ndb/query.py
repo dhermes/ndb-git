@@ -259,6 +259,7 @@ class ParameterizedThing(object):
       eq = not eq
     return eq
 
+
 class Parameter(ParameterizedThing):
   """Represents a bound variable in a GQL query.
 

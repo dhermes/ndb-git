@@ -1,5 +1,6 @@
 import logging
 
+
 def webapp_add_wsgi_middleware(app):
   try:
     from google.appengine.ext.appstats import recording
@@ -8,6 +9,7 @@ def webapp_add_wsgi_middleware(app):
   else:
     app = recording.appstats_wsgi_middleware(app)
   return app
+
 
 appstats_KEY_DISTANCE = 10
 appstats_MAX_REPR = 1000

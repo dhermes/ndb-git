@@ -473,6 +473,7 @@ class Future(object):
       val = future.get_result()  # This won't raise an exception.
       self._help_tasklet_along(ns, ds_conn, gen, val)
 
+
 def sleep(dt):
   """Public function to sleep some time.
 

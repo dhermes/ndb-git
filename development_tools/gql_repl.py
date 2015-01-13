@@ -5,6 +5,7 @@ from ndb import metadata
 
 import ndb_repl
 
+
 def repl():
   while True:
     line = raw_input('gql> ')
@@ -52,11 +53,13 @@ def repl():
     for i, result in enumerate(results):
       print '%2d.' % (i + 1), result
 
+
 def main():
   try:
     repl()
   except EOFError:
     print
+
 
 if __name__ == '__main__':
   main()

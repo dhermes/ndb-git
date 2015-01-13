@@ -3,9 +3,11 @@ from google.appengine.ext.webapp import util
 
 from ndb import *
 
+
 class M(Model):
  name = StringProperty()
  age = IntegerProperty()
+
 
 class RQ(webapp.RequestHandler):
  def get(self):
@@ -30,8 +32,10 @@ urls = [
 
 app = webapp.WSGIApplication(urls)
 
+
 def main():
  util.run_wsgi_app(app)
+
 
 if __name__ == '__main__':
  main()

@@ -16,6 +16,7 @@ class Greeting(ndb.Model):
   def QueryBook(cls, ancestor_key):
     return cls.query(ancestor=ancestor_key).order(-cls.date)
 
+
 class MainPage(webapp.RequestHandler):
   def get(self):
     self.response.out.write('<html><body>')
@@ -38,6 +39,7 @@ class MainPage(webapp.RequestHandler):
         </body>
       </html>""" % (urllib.urlencode({'guestbook_name': guestbook_name}),
                     cgi.escape(guestbook_name)))
+
 
 class Guestbook(webapp.RequestHandler):
   def post(self):

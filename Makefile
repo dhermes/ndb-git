@@ -7,6 +7,12 @@
 
 FLAGS=
 PYTHON= python -Wignore
+export GAE?=/usr/local/google_appengine
+APPCFG=$(GAE)/../../bin/appcfg.py
+DEV_APPSERVER=$(GAE)/../../bin/dev_appserver.py
+DATASTORE_PATH=/tmp/ndb-dev_appserver.datastore
+PORT=8080
+HOST=localhost
 
 help:
 	@echo 'Makefile for NDB for Google App Engine                          '
@@ -61,4 +67,10 @@ repl:
 gql:
 	PYTHONPATH=$(GAEPATH):. $(PYTHON) development_tools/gql_repl.py $(FLAGS)
 
-.PHONY: help bench key_bench put_bench db_keys_only_bench ndb_keys_only_bench get_tasklet_race stress race multithread_test repl gql
+serve:
+	$(PYTHON) $(DEV_APPSERVER) demo/ --port $(PORT) --host $(HOST) $(FLAGS) --datastore_path=$(DATASTORE_PATH)
+
+deploy:
+	$(PYTHON) $(APPCFG) update demo/ --application=$(APP_ID) --version=$(APP_VERSION) $(FLAGS)
+
+.PHONY: help bench key_bench put_bench db_keys_only_bench ndb_keys_only_bench get_tasklet_race stress race multithread_test repl gql serve deploy

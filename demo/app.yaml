@@ -1,6 +1,5 @@
 # Demo app.
-application: ndb-experiment
-version: 1
+# "application:" and "version:" need to be specified from CLI
 runtime: python27
 api_version: 1
 threadsafe: True

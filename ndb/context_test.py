@@ -171,7 +171,7 @@ class ContextTests(test_utils.NDBTest):
     class Blobby(model.Model):
       blob = model.BlobProperty()
     ent1 = Blobby()
-    ent2 = Blobby(blob='x'*2000000)
+    ent2 = Blobby(blob='x' * 2000000)
     fut1 = self.ctx.put(ent1)
     fut2 = self.ctx.put(ent2)  # Error
     err1 = fut1.get_exception()
@@ -180,7 +180,7 @@ class ContextTests(test_utils.NDBTest):
     self.assertTrue(err1 is err2)
     # Try memcache as well (different tasklet, different error).
     fut1 = self.ctx.memcache_set('key1', 'x')
-    fut2 = self.ctx.memcache_set('key2', 'x'*1000001)
+    fut2 = self.ctx.memcache_set('key2', 'x' * 1000001)
     err1 = fut1.get_exception()
     err2 = fut1.get_exception()
     self.assertTrue(isinstance(err1, ValueError))
@@ -465,7 +465,7 @@ class ContextTests(test_utils.NDBTest):
     ent1 = Foo(key=key1, foo=42, bar='hello')
     ctx.put(ent1).get_result()
     ctx.set_memcache_policy(True)
-    ctx.get(key1).get_result() # Pull entity into memcache
+    ctx.get(key1).get_result()  # Pull entity into memcache
 
     model.Model._reset_kind_map()
     self.assertRaises(model.KindError, ctx.get(key1).get_result)
@@ -922,7 +922,7 @@ class ContextTests(test_utils.NDBTest):
     # Raising callable in transaction.
     key = Counter().put()
     log = []
-    self.assertRaises(ZeroDivisionError, trans1, bad=lambda: 1/0)
+    self.assertRaises(ZeroDivisionError, trans1, bad=lambda: 1 / 0)
     self.assertEqual(key.get().count, 1)
     self.assertEqual(log, ['A'])
     # Bad callable in transaction.
@@ -938,7 +938,7 @@ class ContextTests(test_utils.NDBTest):
     # Raising callable outside transaction.
     log = []
     self.assertRaises(ZeroDivisionError,
-                      tasklets.get_context().call_on_commit, lambda: 1/0)
+                      tasklets.get_context().call_on_commit, lambda: 1 / 0)
     # Bad callable outside transaction.
     log = []
     self.assertRaises(TypeError, tasklets.get_context().call_on_commit, 42)
@@ -1002,9 +1002,15 @@ class ContextTests(test_utils.NDBTest):
 
   def testMemcachePolicy(self):
     # Bug reported by Jack Hebert.
-    class P(model.Model): pass
-    class Q(model.Model): pass
-    def policy(key): return key.kind() != 'P'
+    class P(model.Model):
+      pass
+
+    class Q(model.Model):
+      pass
+
+    def policy(key):
+      return key.kind() != 'P'
+
     self.ctx.set_cache_policy(policy)
     self.ctx.set_memcache_policy(policy)
     k1 = model.Key(P, 1)
@@ -1220,7 +1226,7 @@ class ContextTests(test_utils.NDBTest):
     def trans():
       bar = Bar.get_by_id('bar')
       bar.name = 'updated-bar'
-      bar.put_async() # PROBLEM IS HERE, with yield it properly works
+      bar.put_async()  # PROBLEM IS HERE, with yield it properly works
     model.transaction_async(trans).get_result()
 
     bar = bar.key.get()
@@ -1349,8 +1355,8 @@ class ContextTests(test_utils.NDBTest):
       ent = key.get(memcache_deadline=1)
       self.assertEqual(ent, None)
       # Three memcache calls should have been made (get, set, gets).
-      self.assertEqual(observed_deadlines, [1]*3)
-      self.assertEqual(observed_raises, ['raise']*3)
+      self.assertEqual(observed_deadlines, [1] * 3)
+      self.assertEqual(observed_raises, ['raise'] * 3)
 
     finally:
       memcache.create_rpc = orig_create_rpc
@@ -1394,7 +1400,7 @@ class ContextTests(test_utils.NDBTest):
       _use_cache = False
       blob = model.BlobProperty()
     small = Blobby(blob='x')
-    huge = Blobby(blob='x'*1000000)  # Fits in datastore, not in memcache
+    huge = Blobby(blob='x' * 1000000)  # Fits in datastore, not in memcache
     originals = [small, huge]
     keys = model.put_multi(originals)
     copies = model.get_multi(keys)
@@ -1452,7 +1458,7 @@ class ContextTests(test_utils.NDBTest):
     class EmptyModel(model.Model):
       pass
     key = EmptyModel().put()
-    self.ctx.get(key).get_result() # pull entity into memcache
+    self.ctx.get(key).get_result()  # pull entity into memcache
     self.ctx.set_cache_policy(True)
     f1, f2 = self.ctx.get(key), self.ctx.get(key)
     e1, e2 = f1.get_result(), f2.get_result()
@@ -1530,6 +1536,7 @@ class ContextFutureCachingTests(test_utils.NDBTest):
     f4 = self.ctx.memcache_set(key, value, use_cache=True)
     self.assertFalse(f1 is f4,
                     'Context memcache get future cached after result known.')
+
 
 if __name__ == '__main__':
   unittest.main()

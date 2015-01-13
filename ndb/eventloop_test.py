@@ -11,6 +11,7 @@ from .google_test_imports import unittest
 from . import eventloop
 from . import test_utils
 
+
 class EventLoopTests(test_utils.NDBTest):
 
   def setUp(self):
@@ -22,9 +23,15 @@ class EventLoopTests(test_utils.NDBTest):
   the_module = eventloop
 
   def testQueueTasklet(self):
-    def f(unused_number, unused_string, unused_a, unused_b): return 1
-    def g(unused_number, unused_string): return 2
-    def h(unused_c, unused_d): return 3
+    def f(unused_number, unused_string, unused_a, unused_b):
+      return 1
+
+    def g(unused_number, unused_string):
+      return 2
+
+    def h(unused_c, unused_d):
+      return 3
+
     t_before = time.time()
     eventloop.queue_call(1, f, 42, 'hello', unused_a=1, unused_b=2)
     eventloop.queue_call(3, h, unused_c=3, unused_d=4)
@@ -53,7 +60,8 @@ class EventLoopTests(test_utils.NDBTest):
 
   def testFifoOrderForEventsWithDelayNone(self):
     order = []
-    def foo(arg): order.append(arg)
+    def foo(arg):
+      order.append(arg)
 
     eventloop.queue_call(None, foo, 2)
     eventloop.queue_call(None, foo, 1)
@@ -136,7 +144,10 @@ class EventLoopTests(test_utils.NDBTest):
   def testCleanUpStaleEvents(self):
     # See issue 127.  http://goo.gl/2p5Pn
     from . import model
-    class M(model.Model): pass
+
+    class M(model.Model):
+      pass
+
     M().put()
     M().put()
     M().put()
@@ -151,6 +162,6 @@ class EventLoopTests(test_utils.NDBTest):
     ev = eventloop.get_event_loop()  # A new event loop.
     self.assertEqual(len(ev.rpcs), 0)
 
+
 if __name__ == '__main__':
   unittest.main()
-

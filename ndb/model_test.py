@@ -4878,5 +4878,6 @@ class CacheTests(test_utils.NDBTest):
     txn1()
     txn2()
 
+
 if __name__ == '__main__':
   unittest.main()

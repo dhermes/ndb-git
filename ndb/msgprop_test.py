@@ -429,5 +429,6 @@ class MsgPropTests(test_utils.NDBTest):
     res2 = Storage.query().get(projection=['wrap.greets.text'])
     self.assertEqual(res2.wrap, Wrapper(greets=[Greeting(text='abc')]))
 
+
 if __name__ == '__main__':
   unittest.main()

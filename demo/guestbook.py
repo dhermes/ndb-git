@@ -37,7 +37,7 @@ class MainPage(webapp.RequestHandler):
           <input type="submit" value="switch"></form>
         </body>
       </html>""" % (urllib.urlencode({'guestbook_name': guestbook_name}),
-                          cgi.escape(guestbook_name)))
+                    cgi.escape(guestbook_name)))
 
 class Guestbook(webapp.RequestHandler):
   def post(self):
@@ -46,7 +46,7 @@ class Guestbook(webapp.RequestHandler):
     guestbook_name = self.request.get('guestbook_name')
     greeting = Greeting(parent=ndb.Key("Book",
                                        guestbook_name or "*fakebook*"),
-                        content = self.request.get('content'))
+                        content=self.request.get('content'))
     greeting.put()
     self.redirect('/?' + urllib.urlencode({'guestbook_name': guestbook_name}))
 

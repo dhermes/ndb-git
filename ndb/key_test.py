@@ -469,5 +469,6 @@ class KeyTests(test_utils.NDBTest):
     old_key2 = new_key.to_old_key()
     self.assertEquals(old_key, old_key2)
 
+
 if __name__ == '__main__':
   unittest.main()

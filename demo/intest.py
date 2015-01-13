@@ -25,8 +25,8 @@ class RQ(webapp.RequestHandler):
    self.response.out.write('<p><a href="/_ah/stats">Appstats</a>')
 
 urls = [
- ('/.*', RQ),
- ]
+  ('/.*', RQ),
+]
 
 app = webapp.WSGIApplication(urls)
 

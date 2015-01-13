@@ -99,8 +99,10 @@ class EventLoop(object):
         hi = len(self.queue)
     while lo < hi:
         mid = (lo + hi) // 2
-        if event[0] < self.queue[mid][0]: hi = mid
-        else: lo = mid + 1
+        if event[0] < self.queue[mid][0]:
+          hi = mid
+        else:
+          lo = mid + 1
     self.queue.insert(lo, event)
 
   def queue_call(self, delay, callback, *args, **kwds):

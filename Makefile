@@ -7,78 +7,45 @@
 
 FLAGS=
 export GAE?=	/usr/local/google_appengine
-GAEPATH=$(GAE):$(GAE)/lib/yaml/lib:$(GAE)/lib/webob:$(GAE)/lib/fancy_urllib:$(GAE)/lib/simplejson:$(GAE)/lib/protorpc:$(GAE)/lib/protorpc-1.0
-TESTS=	`find ndb -name [a-z]\*_test.py ! -name ndb_test.py`
 NONTESTS=`find ndb -name [a-z]\*.py ! -name \*_test.py`
-PORT=	8080
-HOST=	localhost
 PYTHON= python -Wignore
+COVERAGE=coverage
 APPCFG= $(GAE)/../../bin/appcfg.py
 DEV_APPSERVER=$(GAE)/../../bin/dev_appserver.py
-CUSTOM=	documentation_samples/custom_property.py
-COVERAGE=coverage
 DATASTORE_PATH=/tmp/ndb-dev_appserver.datastore
+PORT=	8080
+HOST=	localhost
 
-default: runtests
+help:
+	@echo 'Makefile for NDB for Google App Engine                          '
+	@echo '                                                                '
+	@echo 'Usage:                                                          '
+	@echo '   make runtests             Run all unit tests                 '
+	@echo '   make coverage             Report test coverage               '
+	@echo '   make serve                Serve sample app locally           '
+	@echo '   make deploy               Deploy sample app                  '
+	@echo '   make bench                Task creation benchmark            '
+	@echo '   make key_bench            Key comparison benchmark           '
+	@echo '   make put_bench            Multi-Put benchmark                '
+	@echo '   make db_keys_only_bench   Key fetch benchmark using db       '
+	@echo '   make ndb_keys_only_bench  Key fetch benchmark using ndb      '
+	@echo '   make repl                 Custom REPL with NDB loaded        '
+	@echo '   make gql                  Custom REPL for executing GQL      '
+	@echo '   make longlines            Check long lines in source         '
+	@echo '   make trimwhitespace       Trim trailing whitespace in source '
+	@echo '   make get_tasklet_race     Test race conditions in get_tasklet'
+	@echo '   make stress               Threadsafe Py27 Stress Test        '
+	@echo '   make race                 Race condition tests for NDB       '
+	@echo '   make multithread_test     Multi-threading torture test       '
+	@echo '                                                                '
+	@echo 'NOTE: This file is being wound down and will be fully           '
+	@echo '      replaced by tox.ini.                                      '
 
 runtests ndb_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) ndb/ndb_test.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) ndb/ndb_test.py $(FLAGS)
 
 c cov cove cover coverage:
-	PYTHONPATH=$(GAEPATH):. $(COVERAGE) run ndb/ndb_test.py $(FLAGS)
-	$(COVERAGE) html $(NONTESTS)
-	$(COVERAGE) report -m $(NONTESTS)
-	echo "open file://`pwd`/htmlcov/index.html"
-
-test: key_test msgprop_test model_test polymodel_test query_test metadata_test stats_test rpc_test eventloop_test tasklets_test context_test ps_test blobstore_test
-
-key_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.key_test $(FLAGS)
-
-msgprop_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.msgprop_test $(FLAGS)
-
-model_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.model_test $(FLAGS)
-
-polymodel_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.polymodel_test $(FLAGS)
-
-query_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.query_test $(FLAGS)
-
-metadata_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.metadata_test $(FLAGS)
-
-stats_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.stats_test $(FLAGS)
-
-rpc_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.rpc_test $(FLAGS)
-
-eventloop_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.eventloop_test $(FLAGS)
-
-tasklets_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.tasklets_test $(FLAGS)
-
-context_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.context_test $(FLAGS)
-
-ps_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.prospective_search_test $(FLAGS)
-
-blobstore_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -m ndb.blobstore_test $(FLAGS)
-
-oldcoverage:
-	$(COVERAGE) erase
-	for i in $(TESTS); \
-	do \
-	  echo $$i; \
-	  PYTHONPATH=$(GAEPATH):. $(COVERAGE) run -p -m ndb.`basename $$i .py`; \
-	done
-	$(COVERAGE) combine
+	PYTHONPATH=. $(COVERAGE) run ndb/ndb_test.py $(FLAGS)
 	$(COVERAGE) html $(NONTESTS)
 	$(COVERAGE) report -m $(NONTESTS)
 	echo "open file://`pwd`/htmlcov/index.html"
@@ -86,23 +53,29 @@ oldcoverage:
 serve:
 	$(PYTHON) $(DEV_APPSERVER) demo/ --port $(PORT) --host $(HOST) $(FLAGS) --datastore_path=$(DATASTORE_PATH)
 
-debug:
-	$(PYTHON) $(DEV_APPSERVER) demo/ --port $(PORT) --host $(HOST) --debug $(FLAGS) --datastore_path=$(DATASTORE_PATH)
-
 deploy:
-	$(PYTHON) $(APPCFG) update demo/ $(FLAGS)
+	$(PYTHON) $(APPCFG) update demo/ --application=$(APP_ID) --version=$(APP_VERSION) $(FLAGS)
 
 bench:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/bench.py $(FLAGS)
 
 key_bench:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/key_bench.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/key_bench.py $(FLAGS)
 
-python:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) -i development_tools/ndb_repl.py $(FLAGS)
+put_bench:
+	PYTHONPATH=. $(PYTHON) benchmarks/put_bench.py $(FLAGS)
 
-python_raw:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) $(FLAGS)
+db_keys_only_bench:
+	PYTHONPATH=. $(PYTHON) benchmarks/db_keys_only_bench.py $(FLAGS)
+
+ndb_keys_only_bench:
+	PYTHONPATH=. $(PYTHON) benchmarks/ndb_keys_only_bench.py $(FLAGS)
+
+repl:
+	PYTHONPATH=. $(PYTHON) -i development_tools/ndb_repl.py $(FLAGS)
+
+gql:
+	PYTHONPATH=. $(PYTHON) development_tools/gql_repl.py $(FLAGS)
 
 longlines:
 	$(PYTHON) longlines.py
@@ -110,24 +83,16 @@ longlines:
 tr trim trimwhitespace:
 	$(PYTHON) trimwhitespace.py
 
-zip:
-	D=`pwd`; D=`basename $$D`; cd ..; rm -f $$D.zip; zip $$D.zip `hg st -c -m -a -n -X $$D/.idea $$D`
-
-clean:
-	rm -rf htmlcov .coverage
-	rm -f `find . -name \*.pyc -o -name \*~ -o -name @\* -o -name \*.orig -o -name \*.rej -o -name \#*\#`
-
 g get_tasklet_race:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/get_tasklet_race.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/get_tasklet_race.py $(FLAGS)
 
 s stress:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/stress.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/stress.py $(FLAGS)
 
 race:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/race.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/race.py $(FLAGS)
 
 multithread_test:
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) benchmarks/multithread_test.py $(FLAGS)
+	PYTHONPATH=. $(PYTHON) benchmarks/multithread_test.py $(FLAGS)
 
-x $(CUSTOM):
-	PYTHONPATH=$(GAEPATH):. $(PYTHON) $(CUSTOM) $(FLAGS)
+.PHONY: help runtests coverage serve deploy bench key_bench put_bench db_keys_only_bench ndb_keys_only_bench repl gql longlines trimwhitespace get_tasklet_race stress race multithread_test

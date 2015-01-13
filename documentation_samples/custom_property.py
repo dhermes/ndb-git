@@ -12,6 +12,7 @@ unittest framework.)
 
 import datetime
 
+from ndb import google_imports  # For path fixing.
 from google.appengine.ext import testbed
 
 from ndb.model import *

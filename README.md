@@ -138,11 +138,16 @@ To run an interactive shell with `ndb` already imported and some sample
 classes defined, use
 
 ```
-make python
+make repl
 ```
 
-See the `Makefile` for more details.  For Windows users, the `make.cmd`
-script has similar functionality.
+See the `Makefile` for more details; run
+
+```
+make repl
+```
+
+for a help message.
 
 [1]: http://nedbatchelder.com/code/coverage/
 [2]: https://code.google.com/p/appengine-ndb-experiment/

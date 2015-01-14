@@ -1,0 +1,48 @@
+https://github.com/GoogleCloudPlatform/google-cloud-datastore/issues/2#issuecomment-49807662
+
+FYI, datastore_rpc.py and datastore_query.py were designed to support
+swapping out the low level transport layer. Given an adapter and a connection
+that works on top of the Cloud Datastore API, ndb should work (as long as
+you disable caching). NDB will officially support the Cloud Datastore API
+in this way in the future.
+
+$ git grep 'apiproxy_rpc\.'
+- apiproxy_rpc.RPC.IDLE -------> 0 (Seems to be unused?)
+- apiproxy_rpc.RPC.RUNNING ----> 1 (Used on RPCs from datastore_rpc)
+- apiproxy_rpc.RPC.FINISHING --> 2 (Ditto)
+
+$ git grep 'datastore_rpc\.'
+- datastore_rpc.AbstractAdapter
+- datastore_rpc.BaseConfiguration
+- datastore_rpc.ConfigOption
+- datastore_rpc.Configuration
+- datastore_rpc.Configuration.EVENTUAL_CONSISTENCY
+- datastore_rpc.Configuration.max_delete_keys
+- datastore_rpc.Configuration.max_get_keys
+- datastore_rpc.Connection
+- datastore_rpc.Connection.MAX_DELETE_KEYS
+- datastore_rpc.Connection.MAX_GET_KEYS
+- datastore_rpc.MultiRpc
+- datastore_rpc.MultiRpc.wait_any
+- datastore_rpc.TransactionOptions
+- datastore_rpc.TransactionOptions.ALLOWED
+- datastore_rpc.TransactionalConnection
+- datastore_rpc.datastore_pb.Transaction
+
+$ git grep 'datastore_query\.'
+- datastore_query.CompositeFilter
+- datastore_query.CompositeFilter.AND
+- datastore_query.CompositeOrder
+- datastore_query.Cursor
+- datastore_query.FetchOptions
+- datastore_query.FetchOptions.offset
+- datastore_query.FilterPredicate
+- datastore_query.Order
+- datastore_query.PropertyOrder
+- datastore_query.PropertyOrder.ASCENDING
+- datastore_query.PropertyOrder.DESCENDING
+- datastore_query.Query
+- datastore_query.QueryOptions
+- datastore_query._AugmentedQuery
+- datastore_query._make_key_value_map
+- datastore_query.make_filter
